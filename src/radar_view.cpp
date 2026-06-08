@@ -35,9 +35,9 @@
 #define DRG_BLIP   lv_color_hex(0xFFE11A)
 #define DRG_EMERG  lv_color_hex(0xFF4D2E)
 #define DRG_ACCENT lv_color_hex(0xFF8A1E)
-#define DRG_GRID   lv_color_hex(0x2C6B24)
-#define DRG_BG_TOP lv_color_hex(0x86E03C)
-#define DRG_BG_BOT lv_color_hex(0x2E8A26)
+#define DRG_GRID   lv_color_hex(0x3F8B30)
+#define DRG_BG_TOP lv_color_hex(0x18540F)
+#define DRG_BG_BOT lv_color_hex(0x09250A)
 #define DRG_FLOW   lv_color_hex(0xFFC24D)
 
 // ---- sweep config ----
@@ -56,7 +56,7 @@
 #define DRAGON_BALLS      7
 #define DRAGON_ARROWS     8
 #define BALL_R            9
-#define WAVE_EXPAND       16.0f
+#define WAVE_EXPAND       28.0f
 
 static int        s_theme    = THEME_PHOSPHOR;
 static void      (*s_themeCb)(int) = nullptr;
@@ -315,8 +315,8 @@ static void sweep_timer_cb(lv_timer_t *t) {
             if (!ac.inRange) continue;
             if (balls >= DRAGON_BALLS) break;
             balls++;
-            lv_area_t a = { (lv_coord_t)(ac.pos.x - 28), (lv_coord_t)(ac.pos.y - 28),
-                            (lv_coord_t)(ac.pos.x + 28), (lv_coord_t)(ac.pos.y + 28) };
+            lv_area_t a = { (lv_coord_t)(ac.pos.x - 44), (lv_coord_t)(ac.pos.y - 44),
+                            (lv_coord_t)(ac.pos.x + 44), (lv_coord_t)(ac.pos.y + 44) };
             lv_obj_invalidate_area(s_acLayer, &a);
         }
         return;
@@ -351,13 +351,17 @@ static void draw_trail(lv_draw_ctx_t *d, const AcDraw &ac, lv_color_t col) {
 }
 
 static void draw_ball(lv_draw_ctx_t *d, const AcDraw &ac) {
-    // emitted wave
+    // emitted waves: several expanding rings (sonar-ping look)
     lv_draw_arc_dsc_t w;
     lv_draw_arc_dsc_init(&w);
     w.color = DRG_ACCENT;
-    w.width = 2;
-    w.opa = (lv_opa_t)((1.0f - s_wavePhase) * 150.0f);
-    if (w.opa > 4) lv_draw_arc(d, &w, &ac.pos, (uint16_t)(BALL_R + s_wavePhase * WAVE_EXPAND), 0, 360);
+    w.width = 3;
+    for (int wv = 0; wv < 3; ++wv) {
+        float ph = s_wavePhase + (float)wv * 0.34f;
+        if (ph >= 1.0f) ph -= 1.0f;
+        w.opa = (lv_opa_t)((1.0f - ph) * 245.0f);
+        if (w.opa > 6) lv_draw_arc(d, &w, &ac.pos, (uint16_t)(BALL_R + 3 + ph * WAVE_EXPAND), 0, 360);
+    }
 
     // the ball
     lv_draw_rect_dsc_t b;
