@@ -23,7 +23,8 @@
 #include <time.h>                   // NTP/RTC clock + date
 #include <WebServer.h>              // configuration web page
 #include <ESPmDNS.h>                // http://capsuleradar.local
-#include <ArduinoOTA.h>             // OTA firmware update over WiFi
+#include <ArduinoOTA.h>             // OTA firmware update over WiFi (PlatformIO/espota)
+#include <Update.h>                 // browser OTA: self-flash an uploaded .bin
 
 // ---- shared state ----
 static std::vector<Aircraft> g_aircraft;      // latest snapshot
@@ -282,7 +283,7 @@ static void handleRoot() {
         "<div class=card><div class=t>Network</div>"
         "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>Forget the saved WiFi and reopen the setup portal.</p>"
         "<form method=POST action=/wifi><button class=w>Reset WiFi</button></form></div>"
-        "<p class=ft>Reach me at <code>capsuleradar.local</code></p>"
+        "<p class=ft>Reach me at <code>capsuleradar.local</code> &middot; <a href=/update style='color:#9affc8'>Firmware update</a></p>"
         "<script>"
         "var C=[%.5f,%.5f];var MAP=L.map('map').setView(C,10);"
         "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'(c) OpenStreetMap'}).addTo(MAP);"
@@ -371,6 +372,50 @@ static void handleIdle() {   // idle auto-dim timeout (seconds; 0 = never)
     g_web.send(200, "text/plain", "ok");
 }
 
+// ---- browser OTA: upload an app .bin over WiFi and self-flash ----
+static void handleUpdatePage() {
+    g_web.send(200, "text/html",
+        "<!DOCTYPE html><html><head><meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>Capsule Radar - Update</title><style>"
+        "body{background:radial-gradient(circle at 50% -10%,#0a1f15,#04100a 70%);color:#cdd6d1;"
+        "font-family:system-ui,sans-serif;margin:0 auto;padding:20px;max-width:480px;min-height:100vh}"
+        "h1{color:#1dff86;font-size:20px}.card{background:rgba(10,20,14,.85);border:1px solid #1f3a2b;border-radius:14px;padding:16px}"
+        "input,button{width:100%;box-sizing:border-box;padding:11px;border-radius:8px;margin-top:8px;font-size:16px}"
+        "input{background:#0c1a12;color:#eafff3;border:1px solid #2a4a39}"
+        "button{border:0;background:#1dff86;color:#04140b;font-weight:700}"
+        "#bar{height:12px;background:#0c1a12;border-radius:6px;overflow:hidden;margin-top:14px;display:none}"
+        "#fill{height:100%;width:0;background:#1dff86;transition:width .2s}#msg{margin-top:10px;color:#9affc8;font-size:13px}"
+        "a{color:#1dff86}p{color:#9affc8;font-size:13px}"
+        "</style></head><body><h1>Firmware update (OTA)</h1><div class=card>"
+        "<p>Upload the <b>app firmware</b> <code>CapsuleRadar-ota.bin</code> from the GitHub release. "
+        "Do NOT use the merged flash image here.</p>"
+        "<input type=file id=f accept='.bin'>"
+        "<button onclick=u()>Update over WiFi</button>"
+        "<div id=bar><div id=fill></div></div><div id=msg></div></div>"
+        "<p style='text-align:center;margin-top:14px'><a href=/>&larr; Back to settings</a></p>"
+        "<script>function u(){var f=document.getElementById('f').files[0];if(!f){return}"
+        "var x=new XMLHttpRequest(),fd=new FormData();fd.append('f',f);"
+        "document.getElementById('bar').style.display='block';"
+        "x.upload.onprogress=function(e){if(e.lengthComputable)document.getElementById('fill').style.width=(e.loaded/e.total*100)+'%'};"
+        "x.onload=function(){document.getElementById('msg').innerText=x.responseText+' - rebooting...'};"
+        "x.onerror=function(){document.getElementById('msg').innerText='Upload failed'};"
+        "x.open('POST','/update');x.send(fd);}</script></body></html>");
+}
+
+static void handleUpdateUpload() {
+    HTTPUpload &up = g_web.upload();
+    if (up.status == UPLOAD_FILE_START) {
+        Serial.printf("[update] start: %s\n", up.filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
+    } else if (up.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(up.buf, up.currentSize) != up.currentSize) Update.printError(Serial);
+    } else if (up.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) Serial.printf("[update] done: %u bytes\n", (unsigned)up.totalSize);
+        else Update.printError(Serial);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -457,6 +502,15 @@ void setup() {
     g_web.on("/bright", handleBright);
     g_web.on("/vol", handleVol);
     g_web.on("/idle", handleIdle);
+    g_web.on("/update", HTTP_GET, handleUpdatePage);
+    g_web.on("/update", HTTP_POST,
+        []() {
+            const bool ok = !Update.hasError();
+            g_web.send(200, "text/plain", ok ? "OK" : "FAIL");
+            delay(800);
+            if (ok) ESP.restart();
+        },
+        handleUpdateUpload);
     g_web.begin();
 
     Serial.println("setup done");

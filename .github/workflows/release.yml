@@ -38,17 +38,20 @@ jobs:
             0x8000  "$B/partitions.bin" \
             0xe000  "$BOOT_APP0" \
             0x10000 "$B/firmware.bin"
+          cp "$B/firmware.bin" CapsuleRadar-ota.bin   # app-only image for the device's web OTA page
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: CapsuleRadar-esp32s3.bin
+          files: |
+            CapsuleRadar-esp32s3.bin
+            CapsuleRadar-ota.bin
           generate_release_notes: true
           body: |
-            Flash the attached `CapsuleRadar-esp32s3.bin` to an ESP32-S3 at offset `0x0`:
+            **First flash (USB):** `CapsuleRadar-esp32s3.bin` — the full merged image (offset `0x0`).
+            - Browser, no toolchain: https://socquique.github.io/capsule-radar/
+            - Or: `esptool.py --chip esp32s3 write_flash 0x0 CapsuleRadar-esp32s3.bin`
 
-            ```
-            esptool.py --chip esp32s3 write_flash 0x0 CapsuleRadar-esp32s3.bin
-            ```
-
-            Or flash from your browser (no toolchain): https://socquique.github.io/capsule-radar/
+            **Update over WiFi (no cable):** `CapsuleRadar-ota.bin` — the app-only image.
+            Open `http://capsuleradar.local/update` on the device and upload this file.
+            (Do **not** upload the merged image there.)
