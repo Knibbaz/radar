@@ -63,3 +63,8 @@ bool photo_get(const char *hex, int *w, int *h, char *credit, size_t cn) {
     }
     return false;
 }
+
+bool photo_done(const char *hex) {
+    std::lock_guard<std::mutex> g(s_m);
+    return hex && s_doneHex[0] && strcmp(hex, s_doneHex) == 0;   // committed (photo or not)
+}

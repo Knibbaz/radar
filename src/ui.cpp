@@ -68,13 +68,15 @@ static void refresh_card(void) {
         route_request(in.call);
     }
     char rfrom[40], rto[40];
-    if (in.call[0] && route_get(in.call, rfrom, sizeof(rfrom), rto, sizeof(rto))) {
+    if (!in.call[0]) {
+        lv_label_set_text(s_cardRoute, "Route -");                 // no callsign -> nothing to look up
+    } else if (route_get(in.call, rfrom, sizeof(rfrom), rto, sizeof(rto))) {
         char rt[96];
         if (rfrom[0] || rto[0]) snprintf(rt, sizeof(rt), "%s -> %s", rfrom[0] ? rfrom : "?", rto[0] ? rto : "?");
-        else                    snprintf(rt, sizeof(rt), "route n/a");
+        else                    snprintf(rt, sizeof(rt), "Route unavailable");
         lv_label_set_text(s_cardRoute, rt);
     } else {
-        lv_label_set_text(s_cardRoute, "...");
+        lv_label_set_text(s_cardRoute, "Looking up route...");     // pending: lookup in flight
     }
 
     // aircraft photo (planespotters), shown above the card when one is available
@@ -96,8 +98,16 @@ static void refresh_card(void) {
             lv_obj_clear_flag(s_photoCredit, LV_OBJ_FLAG_HIDDEN);
         }
     } else if (s_photo) {
+        // No image to show yet: hide the canvas, but use the caption line to tell the
+        // user what's happening — "Loading..." while the fetch is in flight, or a quiet
+        // "No photo" once it finished without one. Unobtrusive (small, dim) but informative.
         lv_obj_add_flag(s_photo, LV_OBJ_FLAG_HIDDEN);
-        if (s_photoCredit) lv_obj_add_flag(s_photoCredit, LV_OBJ_FLAG_HIDDEN);
+        if (s_photoCredit) {
+            const bool done = in.hex[0] && photo_done(in.hex);
+            lv_label_set_text(s_photoCredit, done ? "No photo available" : "Loading photo...");
+            lv_obj_align(s_photoCredit, LV_ALIGN_CENTER, 0, -104);   // where the photo would sit
+            lv_obj_clear_flag(s_photoCredit, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 

@@ -10,3 +10,4 @@ bool photo_pending(char *hexOut, size_t n);          // network task: hex to fet
 lv_color_t *photo_buffer(int *maxW, int *maxH);      // PSRAM RGB565 buffer to decode into
 void photo_commit(int w, int h, const char *hex, const char *credit);  // ready (w=0 => none)
 bool photo_get(const char *hex, int *w, int *h, char *credit, size_t cn);  // ready & matches?
+bool photo_done(const char *hex);                    // fetch finished for this hex (with or without a photo)
