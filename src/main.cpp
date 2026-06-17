@@ -39,6 +39,8 @@ static WiFiManager           g_wm;
 static int                   g_brightnessDay = BRIGHTNESS_DEFAULT;   // user brightness (web/NVS)
 static int                   g_volume = 60;                          // alert volume 0..100 (web/NVS)
 static bool                  g_muted  = false;                       // mute alert pings
+static int                   g_alertMode = 2;                        // 0=off 1=emergencies 2=new+emergencies (web/NVS)
+static float                 g_proximityKm = 0.0f;                   // proximity alert radius, km (0=off) (web/NVS)
 static uint32_t              g_idleDimMs = IDLE_DIM_MS;              // dim after this idle time (0 = never)
 static bool                  g_showSweep = true;                     // rotating sweep line on/off (web/NVS)
 static int                   g_units = 0;                            // 0=Aviation 1=Metric 2=Imperial (web/NVS)
@@ -142,32 +144,46 @@ static void loadSettings() {
     g_brightnessDay    = p.getInt("bright", BRIGHTNESS_DEFAULT);
     g_volume           = p.getInt("vol", 60);
     g_muted            = p.getBool("mute", false);
+    g_alertMode        = p.getInt("alertmode", 2);
+    g_proximityKm      = p.getFloat("proxkm", 0.0f);
     g_idleDimMs        = p.getUInt("idledim", IDLE_DIM_MS);
     g_units            = p.getInt("units", 0);
     p.end();
 }
 
-// Ping when a new aircraft enters range (rate-limited) or for emergency/military (always).
+// Audio alerts. g_alertMode: 0 = off, 1 = emergencies only, 2 = new aircraft + emergencies.
+// g_proximityKm > 0 also pings (once) when any aircraft crosses into that radius.
 static void checkAudioEvents() {
     if (!audio_present()) return;
-    static std::set<std::string> seen;
+    static std::set<std::string> seen, seenProx;
     static bool first = true;
     static uint32_t lastNew = 0;
-    std::set<std::string> now;
+    std::set<std::string> now, nowProx;
     for (const Aircraft &ac : g_snap) {
         const double d = geo::haversineKm(g_settings.homeLat, g_settings.homeLon, ac.lat, ac.lon);
         if (d > g_settings.rangeKm) continue;                 // in-range only
         const std::string hex = ac.hex.c_str();
         now.insert(hex);
-        if (first || seen.count(hex)) continue;               // not new
-        if (acIsEmergency(ac.squawk) || ac.military) {   // military flag comes from the feed (dbFlags)
-            audio_play(AUDIO_ALERT);                          // urgent: always
-        } else if (millis() - lastNew > 3000) {
-            audio_play(AUDIO_NEW);                            // new contact: rate-limited
-            lastNew = millis();
+        const bool isNew     = !first && !seen.count(hex);
+        const bool emergency = acIsEmergency(ac.squawk) || ac.military;  // military: feed dbFlags
+
+        // proximity: fire once, when an aircraft first crosses into the radius (any aircraft)
+        if (g_proximityKm > 0.0f && d <= g_proximityKm) {
+            nowProx.insert(hex);
+            if (!first && !seenProx.count(hex)) audio_play(AUDIO_ALERT);
+        }
+
+        // new-in-range pings (on entry), gated by the alert mode
+        if (isNew) {
+            if (emergency) { if (g_alertMode >= 1) audio_play(AUDIO_ALERT); }   // emergencies only / +new
+            else if (g_alertMode >= 2 && millis() - lastNew > 3000) {
+                audio_play(AUDIO_NEW);                                          // new contact (rate-limited)
+                lastNew = millis();
+            }
         }
     }
     seen.swap(now);
+    seenProx.swap(nowProx);
     first = false;
 }
 
@@ -273,7 +289,26 @@ static void handleRoot() {
         snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", i, i == g_rotation ? " selected" : "", rnames[i]);
         rotopts += o;
     }
-    static char buf[7800];   // static (not on the 8 KB loop-task stack) to avoid overflow
+    const char *anames[] = {"Off", "Emergencies only", "New aircraft + emergencies"};
+    String aopts;
+    for (int i = 0; i < 3; ++i) {
+        char o[80];
+        snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", i, i == g_alertMode ? " selected" : "", anames[i]);
+        aopts += o;
+    }
+    const int proxUnit[] = {0, 2, 5, 10, 25};   // 0 = off; rest in the user's distance unit
+    String popts;
+    for (int pv : proxUnit) {
+        const float pkm = (pv == 0) ? 0.0f : (pv / ufac);   // user unit -> km (value submitted)
+        const bool  sel = (pv == 0) ? (g_proximityKm <= 0.0f) : (fabsf(g_proximityKm - pkm) < 0.4f);
+        char lbl[24];
+        if (pv == 0) snprintf(lbl, sizeof(lbl), "Off");
+        else         snprintf(lbl, sizeof(lbl), "%d %s", pv, uname);
+        char o[80];
+        snprintf(o, sizeof(o), "<option value=%.3f%s>%s</option>", pkm, sel ? " selected" : "", lbl);
+        popts += o;
+    }
+    static char buf[8200];   // static (not on the 8 KB loop-task stack) to avoid overflow
     snprintf(buf, sizeof(buf),
         "<!DOCTYPE html><html><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -325,6 +360,8 @@ static void handleRoot() {
         "<label>Volume</label>"
         "<input type=range min=0 max=100 value='%d' oninput='v(this.value,0)' onchange='v(this.value,1)'>"
         "<label><input type=checkbox class=ck %s onchange='m(this.checked)'>Mute alerts</label>"
+        "<label>Alert on</label><select onchange='al(this.value)'>%s</select>"
+        "<label>Proximity alert</label><select onchange='px(this.value)'>%s</select>"
         "<button type=button class=sec onclick='t()'>Test ping</button></div>"
         "<div class=card><div class=t>Network</div>"
         "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>Forget the saved WiFi and reopen the setup portal.</p>"
@@ -346,11 +383,13 @@ static void handleRoot() {
         "function sw(c){fetch('/sweep?v='+(c?1:0)+'&save=1')}"
         "function ap(c){fetch('/airports?v='+(c?1:0)+'&save=1')}"
         "function ro(v){fetch('/rotate?v='+v+'&save=1')}"
-        "function u(v){fetch('/units?v='+v+'&save=1')}</script></body></html>",
+        "function u(v){fetch('/units?v='+v+'&save=1')}"
+        "function al(v){fetch('/alerts?mode='+v+'&save=1')}"
+        "function px(v){fetch('/alerts?prox='+v+'&save=1')}</script></body></html>",
         g_settings.homeLat, g_settings.homeLon, ropts.c_str(), topts.c_str(),
         g_brightnessDay, iopts.c_str(), g_showSweep ? "checked" : "",
         g_showAirports ? "checked" : "", rotopts.c_str(), uopts.c_str(),
-        g_volume, g_muted ? "checked" : "",
+        g_volume, g_muted ? "checked" : "", aopts.c_str(), popts.c_str(),
         g_settings.homeLat, g_settings.homeLon);
     g_web.send(200, "text/html", buf);
 }
@@ -413,6 +452,19 @@ static void handleVol() {
     if (g_web.hasArg("test")) {
         if (g_web.arg("test").toInt() == 2) audio_selftest();   // long tone, ignores mute
         else audio_play(AUDIO_NEW);
+    }
+    g_web.send(200, "text/plain", "ok");
+}
+
+static void handleAlerts() {   // what triggers the alert sound (live)
+    if (g_web.hasArg("mode")) g_alertMode   = constrain((int)g_web.arg("mode").toInt(), 0, 2);
+    if (g_web.hasArg("prox")) g_proximityKm = g_web.arg("prox").toFloat();   // km (0 = off)
+    if (g_web.hasArg("save")) {
+        Preferences p;
+        p.begin("capsuleradar", false);
+        p.putInt("alertmode", g_alertMode);
+        p.putFloat("proxkm", g_proximityKm);
+        p.end();
     }
     g_web.send(200, "text/plain", "ok");
 }
@@ -633,6 +685,7 @@ void setup() {
     g_web.on("/wifi", HTTP_POST, handleWifi);
     g_web.on("/bright", handleBright);
     g_web.on("/vol", handleVol);
+    g_web.on("/alerts", handleAlerts);
     g_web.on("/idle", handleIdle);
     g_web.on("/sweep", handleSweep);
     g_web.on("/airports", handleAirports);
