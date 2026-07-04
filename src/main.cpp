@@ -47,6 +47,8 @@ static bool                  g_showSweep = true;                     // rotating
 static int                   g_units = 0;                            // 0=Aviation 1=Metric 2=Imperial (web/NVS)
 static bool                  g_showAirports = true;                  // airport markers on/off (web/NVS)
 static bool                  g_hideGround   = false;                 // skip on-ground aircraft in the feed (web/NVS)
+static int                   g_minAltFt     = 0;                     // only show aircraft above this altitude, ft (0 = off) (web/NVS)
+static bool                  g_milOnly      = false;                 // only show military-flagged aircraft (web/NVS)
 static int                   g_rotation = 0;                         // display rotation 0/1/2/3 = 0/90/180/270 (web/NVS)
 static bool                  g_useGps = false;                       // auto-set home from the LC76G GPS (-G variant) (web/NVS)
 static int                   g_trailLen = 2;                         // aircraft trails 0=off 1=short 2=med 3=long (web/NVS)
@@ -342,6 +344,17 @@ static void handleRoot() {
         snprintf(o, sizeof(o), "<option value=%d%s>%d</option>", mv, mv == g_maxAc ? " selected" : "", mv);
         mxopts += o;
     }
+    // minimum-altitude filter options (stored in ft; labels show ft + km for clarity)
+    const struct { int ft; const char *lbl; } mavals[] = {
+        {0, "Off"}, {5000, "&gt; 5,000 ft (1.5 km)"}, {10000, "&gt; 10,000 ft (3 km)"},
+        {20000, "&gt; 20,000 ft (6 km)"}, {33000, "&gt; 33,000 ft (10 km)"},
+    };
+    String maopts;
+    for (auto &mv : mavals) {
+        char o[96];
+        snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", mv.ft, mv.ft == g_minAltFt ? " selected" : "", mv.lbl);
+        maopts += o;
+    }
     const char *anames[] = {"Off", "Emergencies only", "New aircraft + emergencies"};
     String aopts;
     for (int i = 0; i < 3; ++i) {
@@ -427,6 +440,8 @@ static void handleRoot() {
         "<label><input type=checkbox class=ck %s onchange='sw(this.checked)'>Show radar sweep</label>"
         "<label><input type=checkbox class=ck %s onchange='ap(this.checked)'>Show airports</label>"
         "<label><input type=checkbox class=ck %s onchange='hg(this.checked)'>Hide aircraft on the ground</label>"
+        "<label>Minimum altitude</label><select onchange='ma(this.value)'>%s</select>"
+        "<label><input type=checkbox class=ck %s onchange='mo(this.checked)'>Military aircraft only</label>"
         "<label>Aircraft trails</label><select onchange='tl(this.value)'>%s</select>"
         "<label>Max aircraft on screen</label><select onchange='mx(this.value)'>%s</select>"
         "<label>Screen rotation (USB-C position)</label><select onchange='ro(this.value)'>%s</select>"
@@ -458,6 +473,8 @@ static void handleRoot() {
         "function sw(c){fetch('/sweep?v='+(c?1:0)+'&save=1')}"
         "function ap(c){fetch('/airports?v='+(c?1:0)+'&save=1')}"
         "function hg(c){fetch('/ground?v='+(c?1:0)+'&save=1')}"
+        "function ma(v){fetch('/altmin?v='+v+'&save=1')}"
+        "function mo(c){fetch('/milonly?v='+(c?1:0)+'&save=1')}"
         "function tl(v){fetch('/trail?v='+v+'&save=1')}"
         "function mx(v){fetch('/maxac?v='+v+'&save=1')}"
         "function ro(v){fetch('/rotate?v='+v+'&save=1')}"
@@ -476,7 +493,8 @@ static void handleRoot() {
         g_settings.homeLat, g_settings.homeLon, gpsRow.c_str(), ropts.c_str(), topts.c_str(),
         tzopts.c_str(),
         g_brightnessDay, iopts.c_str(), g_showSweep ? "checked" : "",
-        g_showAirports ? "checked" : "", g_hideGround ? "checked" : "", tlopts.c_str(), mxopts.c_str(), rotopts.c_str(), uopts.c_str(),
+        g_showAirports ? "checked" : "", g_hideGround ? "checked" : "", maopts.c_str(), g_milOnly ? "checked" : "",
+        tlopts.c_str(), mxopts.c_str(), rotopts.c_str(), uopts.c_str(),
         g_volume, g_muted ? "checked" : "", aopts.c_str(), popts.c_str(),
         g_settings.homeLat, g_settings.homeLon, (g_tz == TZ_STR ? 0 : 1));
     g_web.send(200, "text/html", buf);
@@ -613,6 +631,34 @@ static void handleTrail() {   // aircraft trail length 0/1/2/3 (live)
             Preferences p;
             p.begin("capsuleradar", false);
             p.putInt("traillen", g_trailLen);
+            p.end();
+        }
+    }
+    g_web.send(200, "text/plain", "ok");
+}
+
+static void handleAltMin() {   // minimum-altitude feed filter, ft (applies from the next poll)
+    if (g_web.hasArg("v")) {
+        g_minAltFt = constrain((int)g_web.arg("v").toInt(), 0, 60000);
+        g_adsb.setMinAltFt((float)g_minAltFt);
+        if (g_web.hasArg("save")) {
+            Preferences p;
+            p.begin("capsuleradar", false);
+            p.putInt("minalt", g_minAltFt);
+            p.end();
+        }
+    }
+    g_web.send(200, "text/plain", "ok");
+}
+
+static void handleMilOnly() {   // military-only feed filter (applies from the next poll)
+    if (g_web.hasArg("v")) {
+        g_milOnly = g_web.arg("v").toInt() != 0;
+        g_adsb.setMilitaryOnly(g_milOnly);
+        if (g_web.hasArg("save")) {
+            Preferences p;
+            p.begin("capsuleradar", false);
+            p.putBool("milonly", g_milOnly);
             p.end();
         }
     }
@@ -761,12 +807,16 @@ void setup() {
         g_showSweep = p.getBool("sweep", true);
         g_showAirports = p.getBool("airports", true);
         g_hideGround = p.getBool("hideground", false);
+        g_minAltFt = p.getInt("minalt", 0);
+        g_milOnly = p.getBool("milonly", false);
         g_rotation = p.getInt("rot", 0);
         p.end();
         radar::setTheme(t);
         radar::setSweepEnabled(g_showSweep);
         radar::setAirportsEnabled(g_showAirports);
         g_adsb.setHideGround(g_hideGround);
+        g_adsb.setMinAltFt((float)g_minAltFt);
+        g_adsb.setMilitaryOnly(g_milOnly);
         radar::setTrailLength(g_trailLen);
         radar::setMaxOnScreen(g_maxAc);
         display::setRotation((uint8_t)g_rotation);
@@ -842,6 +892,8 @@ void setup() {
     g_web.on("/sweep", handleSweep);
     g_web.on("/airports", handleAirports);
     g_web.on("/ground", handleGround);
+    g_web.on("/altmin", handleAltMin);
+    g_web.on("/milonly", handleMilOnly);
     g_web.on("/trail", handleTrail);
     g_web.on("/maxac", handleMaxAc);
     g_web.on("/rotate", handleRotate);
