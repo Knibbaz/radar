@@ -151,6 +151,20 @@ function drawBlip(ctx: CanvasRenderingContext2D, g: ScopeGeom, s: number, nowMs:
   ctx.save();
   ctx.translate(b.x, b.y);
 
+  // heading indicator line (extends from center outward)
+  if (b.track != null) {
+    const headingRad = (b.track * DEG);
+    const lineLen = 30 * s;
+    ctx.strokeStyle = b.color;
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 0.8 * s;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(lineLen * Math.sin(headingRad), -lineLen * Math.cos(headingRad));
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   if (b.emergency) {
     // pulsing halo (mockup: r 10 -> 26, 1.1 s)
     const p = (nowMs % 1100) / 1100;
