@@ -16,10 +16,10 @@
 - Long-press for detail
 - Swipe for view switching
 
-**P4 — Aircraft detail:**
-- Live route visualization (render existing data)
-- Flight specs/telemetry overlay
-- Aircraft photos (engagement)
+**P4 — Aircraft detail:** ✅
+- [x] Live route visualization (heading indicator lines on radar)
+- [x] Flight specs/telemetry overlay (data age, climb/descent, position)
+- [ ] Aircraft photos (engagement)
 
 **P5 — Nerdy extras:**
 - Signal strength, metrics, anomaly detection
