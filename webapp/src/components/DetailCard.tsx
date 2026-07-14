@@ -74,6 +74,22 @@ export default function DetailCard({ aircraft: ac, settings }: Props) {
           </b>
         </div>
       </div>
+      <div className="telemetry">
+        <div className="telemetry-row">
+          <span className="label">Data age</span>
+          <span className="value">{ac.seenPos}s ago</span>
+        </div>
+        {ac.baroRateFpm != null && Math.abs(ac.baroRateFpm) >= 64 && (
+          <div className="telemetry-row climb-indicator">
+            <span className="label">{ac.baroRateFpm > 0 ? '⬆ Climbing' : '⬇ Descending'}</span>
+            <span className="value">{Math.abs(ac.baroRateFpm)} fpm</span>
+          </div>
+        )}
+        <div className="telemetry-row">
+          <span className="label">Position</span>
+          <span className="value">{ac.lat.toFixed(4)} {ac.lon.toFixed(4)}</span>
+        </div>
+      </div>
     </div>
   );
 }

@@ -184,6 +184,46 @@ body {
 .grid b { font-family: var(--mono); font-size: 15px; color: #dfeee6; font-weight: 400; }
 .grid b.sq-alert { color: var(--red); }
 
+.telemetry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid #1f3a2b;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: #9ab3a5;
+}
+
+.telemetry-row .label {
+  flex: 1;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #5f7a6c;
+}
+
+.telemetry-row .value {
+  text-align: right;
+  color: #dfeee6;
+}
+
+.telemetry-row.climb-indicator .label {
+  color: var(--lime);
+}
+
+.telemetry-row.climb-indicator .value {
+  color: var(--lime);
+}
+
 .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .legend .lt { font-size: 12px; letter-spacing: 1px; color: #7d9588; }
 .legend .bar {
