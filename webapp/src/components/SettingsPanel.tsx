@@ -110,6 +110,20 @@ export default function SettingsPanel({ settings, onSave }: Props) {
           />
           Night mode (red scanlines)
         </label>
+        <label>
+          Flight type filter
+          <select
+            value={draft.flightTypeFilter}
+            onChange={(e) => setDraft({ ...draft, flightTypeFilter: e.target.value as Settings['flightTypeFilter'] })}
+          >
+            <option value="all">All flights</option>
+            <option value="commercial">Commercial</option>
+            <option value="cargo">Cargo</option>
+            <option value="military">Military</option>
+            <option value="private">Private/Charter</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
         <div className="settings-actions">
           <button onClick={() => setOpen(false)}>Cancel</button>
           <button className="primary" onClick={save}>Save</button>

@@ -2,7 +2,7 @@
 // Reads the aircraft Map by ref each frame (no React re-render per frame).
 
 import { useEffect, useRef } from 'react';
-import { altitudeColor, interpolatedPos, isEmergency, type Aircraft } from '../lib/aircraft';
+import { altitudeColor, interpolatedPos, isEmergency, classifyFlightType, type Aircraft } from '../lib/aircraft';
 import { bearingDeg, haversineKm, projectToScreen } from '../lib/geo';
 import { TAP_RADIUS_PX, ZOOM_ANIM_MS } from '../lib/config';
 import { drawScope, scopeGeom, detectSweepHits, type Blip } from '../render/scope';
@@ -78,6 +78,12 @@ export default function RadarCanvas({ settings, storeRef, pollMsRef, selectedHex
 
       const blips: Blip[] = [];
       for (const ac of storeRef.current.values()) {
+        // Apply flight type filter
+        if (st.flightTypeFilter !== 'all') {
+          const flightType = classifyFlightType(ac);
+          if (flightType !== st.flightTypeFilter) continue;
+        }
+
         const p = interpolatedPos(ac, now, pollMsRef.current);
         const distKm = haversineKm(st.homeLat, st.homeLon, p.lat, p.lon);
         const brg = bearingDeg(st.homeLat, st.homeLon, p.lat, p.lon);

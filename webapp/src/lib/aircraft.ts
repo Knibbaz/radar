@@ -25,6 +25,37 @@ export interface Aircraft {
 export const isEmergency = (squawk: number): boolean =>
   squawk === 7500 || squawk === 7600 || squawk === 7700;
 
+export type FlightType = 'commercial' | 'cargo' | 'military' | 'private' | 'other';
+
+// Classify aircraft by type based on callsign/type code patterns
+export function classifyFlightType(ac: Aircraft): FlightType {
+  if (ac.military) return 'military';
+
+  const callsign = ac.flight?.toUpperCase() || '';
+  const type = ac.type?.toUpperCase() || '';
+
+  // Cargo indicators (callsigns like "FDX", "UPS", "DHL" or types containing cargo codes)
+  if (/^(FDX|UPS|DHL|ABX|AMS|ASY|ATI|CAI|CKS|CVA|EVA|FFT|FTW|GTI|HAG|ICT|KLM|LOT|NPT|PIA|SWR|TAP|THY|UZB|VGO|VIR|VLI)/.test(callsign)) {
+    return 'cargo';
+  }
+  if (/CARGO|FREIGHTER|TANKER/.test(type)) return 'cargo';
+
+  // Private/charter (callsigns starting with certain prefixes)
+  if (/^(PVT|PRI|CHR|TCS)/.test(callsign)) return 'private';
+
+  // Commercial (known airline callsigns - sample, can be extended)
+  if (/^(AAL|DAL|UAL|SWA|ASA|BAW|DLH|AFR|KLM|IBE|ITA|AZA|SAS|LOT|CSA|TAP|AUA|LUF|RYR|EZY|VIR|GIA|QFA|SIA|CCA|ANA|JAL|KAL|CES|UAE|EYG)/.test(callsign)) {
+    return 'commercial';
+  }
+
+  // Default: if it looks commercial (2-letter IATA + numbers), classify as commercial
+  if (/^[A-Z]{2}\d{1,4}$/.test(callsign) && !ac.military && callsign.length <= 6) {
+    return 'commercial';
+  }
+
+  return 'other';
+}
+
 // Altitude color map (same bands/bytes as altitudeColor565 / the mockup legend).
 export function altitudeColor(altFt: number, onGround: boolean): string {
   if (onGround) return '#888888';
