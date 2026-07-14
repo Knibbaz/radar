@@ -120,7 +120,7 @@ export default function RadarCanvas({ settings, storeRef, pollMsRef, selectedHex
         prevSweepHitsRef.current = sweepHits;
       }
 
-      drawScope(ctx, g, now, rangeNow, blips, sel);
+      drawScope(ctx, g, now, rangeNow, blips, sel, st.nightMode);
     };
     raf = requestAnimationFrame(frame); // browser stops rAF while the tab is hidden
     return () => cancelAnimationFrame(raf);

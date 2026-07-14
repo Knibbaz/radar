@@ -102,6 +102,14 @@ export default function SettingsPanel({ settings, onSave }: Props) {
           />
           Sweep radar hit detection (audio beep)
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={draft.nightMode}
+            onChange={(e) => setDraft({ ...draft, nightMode: e.target.checked })}
+          />
+          Night mode (red scanlines)
+        </label>
         <div className="settings-actions">
           <button onClick={() => setOpen(false)}>Cancel</button>
           <button className="primary" onClick={save}>Save</button>

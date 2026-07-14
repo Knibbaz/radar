@@ -8,6 +8,7 @@ export interface Settings {
   units: 'aviation' | 'metric';
   pollIntervalMs: number;
   sweepDetectionEnabled: boolean;
+  nightMode: boolean;
 }
 
 const KEY = 'radar.settings';
@@ -19,6 +20,7 @@ const DEFAULTS: Settings = {
   units: 'aviation',
   pollIntervalMs: POLL_INTERVAL_MS,
   sweepDetectionEnabled: true,
+  nightMode: false,
 };
 
 function load(): Settings {
