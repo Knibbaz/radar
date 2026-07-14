@@ -12,6 +12,7 @@
 ### Aircraft Details
 - [ ] Aircraft photo gallery (op basis van registratienummer)
 - [ ] Live aircraft specs (type, snelheid, hoogte histogram)
+- [ ] Live route visualization (met API calls naar FlightAware/OpenSky)
 - [ ] 3D model viewer (basis van type code)
 - [ ] Flight route visualization (met waypoints)
 - [ ] Detailed telemetry overlay (VS, GS, heading)
