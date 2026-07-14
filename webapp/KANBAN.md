@@ -1,5 +1,31 @@
 # Radar Webapp Feature Backlog
 
+## Priority Levels
+**P1 — Finish in progress:**
+- Smooth aircraft movement (improves core responsiveness)
+- Radar sweep hit detection (enables selection feel)
+
+**P2 — Core radar polish:**
+- Night mode (easy win, big visual impact)
+- Flight type filter (high value)
+- History playback (powerful learning tool)
+
+**P3 — Touch interaction:**
+- Pinch-to-zoom gesture
+- Long-press for detail
+- Swipe for view switching
+
+**P4 — Aircraft detail:**
+- Live route visualization (render existing data)
+- Flight specs/telemetry overlay
+- Aircraft photos (engagement)
+
+**P5 — Nerdy extras:**
+- Signal strength, metrics, anomaly detection
+- ML-based detection (future)
+
+---
+
 ## To Do
 ### Touch Screen Features
 - [ ] Pinch-to-zoom en rotate gebaren
