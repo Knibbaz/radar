@@ -34,9 +34,10 @@ export default function Hud({ count, feedOk, rangeKm, onRange }: Props) {
         <span>{clock}</span>
       </div>
       <div className="range-ctl">
-        <button onClick={() => step(-1)} disabled={idx <= 0} aria-label="zoom in">−</button>
+        {/* − widens the range (zoom out), + narrows it (zoom in), like a map */}
+        <button onClick={() => step(1)} disabled={idx >= RANGE_STEPS_KM.length - 1} aria-label="zoom out">−</button>
         <span>{rangeKm} km</span>
-        <button onClick={() => step(1)} disabled={idx >= RANGE_STEPS_KM.length - 1} aria-label="zoom out">+</button>
+        <button onClick={() => step(-1)} disabled={idx <= 0} aria-label="zoom in">+</button>
       </div>
       <div className="brand">CAPSULE RADAR</div>
     </>

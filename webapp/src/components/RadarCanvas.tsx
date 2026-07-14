@@ -4,9 +4,15 @@
 import { useEffect, useRef } from 'react';
 import { altitudeColor, interpolatedPos, isEmergency, type Aircraft } from '../lib/aircraft';
 import { bearingDeg, haversineKm, projectToScreen } from '../lib/geo';
-import { TAP_RADIUS_PX } from '../lib/config';
+import { TAP_RADIUS_PX, ZOOM_ANIM_MS } from '../lib/config';
 import { drawScope, scopeGeom, type Blip } from '../render/scope';
 import type { Settings } from '../hooks/useSettings';
+
+function animatedRange(z: { from: number; to: number; startMs: number }, nowMs: number): number {
+  const t = Math.min(1, Math.max(0, (nowMs - z.startMs) / ZOOM_ANIM_MS));
+  const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; // ease-in-out cubic
+  return z.from + (z.to - z.from) * e;
+}
 
 interface Props {
   settings: Settings;
@@ -25,6 +31,9 @@ export default function RadarCanvas({ settings, storeRef, pollMsRef, selectedHex
   // latest props for the rAF closure without restarting the loop
   const propsRef = useRef({ settings, selectedHex });
   propsRef.current = { settings, selectedHex };
+
+  // zoom glide: the displayed range eases toward settings.rangeKm
+  const zoomRef = useRef({ from: settings.rangeKm, to: settings.rangeKm, startMs: 0 });
 
   useEffect(() => {
     const wrap = wrapRef.current!;
@@ -52,12 +61,23 @@ export default function RadarCanvas({ settings, storeRef, pollMsRef, selectedHex
 
       const g = scopeGeom(css);
       const now = performance.now();
+
+      // ease the displayed range toward the target (retarget mid-glide from
+      // the current animated value, so rapid taps stay smooth)
+      const z = zoomRef.current;
+      if (z.to !== st.rangeKm) {
+        z.from = animatedRange(z, now);
+        z.to = st.rangeKm;
+        z.startMs = now;
+      }
+      const rangeNow = animatedRange(z, now);
+
       const blips: Blip[] = [];
       for (const ac of storeRef.current.values()) {
         const p = interpolatedPos(ac, now, pollMsRef.current);
         const distKm = haversineKm(st.homeLat, st.homeLon, p.lat, p.lon);
         const brg = bearingDeg(st.homeLat, st.homeLon, p.lat, p.lon);
-        const sp = projectToScreen(distKm, brg, st.rangeKm, g.cx, g.cy, g.rOuter);
+        const sp = projectToScreen(distKm, brg, rangeNow, g.cx, g.cy, g.rOuter);
         if (!sp.inRange) continue; // rim arrows are a later phase
         blips.push({
           hex: ac.hex,
@@ -71,7 +91,7 @@ export default function RadarCanvas({ settings, storeRef, pollMsRef, selectedHex
         });
       }
       blipsRef.current = blips;
-      drawScope(ctx, g, now, st.rangeKm, blips, sel);
+      drawScope(ctx, g, now, rangeNow, blips, sel);
     };
     raf = requestAnimationFrame(frame); // browser stops rAF while the tab is hidden
     return () => cancelAnimationFrame(raf);

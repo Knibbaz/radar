@@ -12,6 +12,7 @@ export const SEEN_POS_MAX_S = 60;       // skip feed entries whose position is o
 export const MAX_AIRCRAFT = 60;         // keep only the nearest N per poll
 
 export const TAP_RADIUS_PX = 40;        // finger-tap catch radius (radar_view.cpp)
+export const ZOOM_ANIM_MS = 450;        // range-change ease duration
 export const SWEEP_PERIOD_MS = 4200;    // mockup sweep rotation period
 export const SNAP_KM = 2;               // glide snap guard: jump > this teleports instead
 

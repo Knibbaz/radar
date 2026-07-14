@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+webapp/src/hooks/useSettings.tsimport { useCallback, useState } from 'react';
 import { HOME_DEFAULT, POLL_INTERVAL_MS, RANGE_KM_DEFAULT } from '../lib/config';
 
 export interface Settings {
