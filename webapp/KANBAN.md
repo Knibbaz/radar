@@ -67,12 +67,12 @@
 - [ ] Multi-language support
 
 ## In Progress
-- [ ] Smooth aircraft movement (animatie tussen posities)
-- [ ] Radar sweep hit detection (updates bij sweep contact)
 
 ## Done
-- [ ] Basic radar visualization
-- [ ] Aircraft selection and details
-- [ ] Range control with smooth zoom
-- [ ] Settings persistence
-- [ ] Responsive design for mobile/desktop
+- [x] Basic radar visualization
+- [x] Aircraft selection and details
+- [x] Range control with smooth zoom
+- [x] Settings persistence
+- [x] Responsive design for mobile/desktop
+- [x] Smooth aircraft movement (animatie tussen posities)
+- [x] Radar sweep hit detection (updates bij sweep contact)
