@@ -1,0 +1,277 @@
+/* Theme from assets/plane_radar_2.0_mockup.html */
+:root {
+  --green: #1dff86;
+  --green-soft: #9affc8;
+  --ink: #eafff3;
+  --amber: #ffb23c;
+  --red: #ff5a3c;
+  --cyan: #3ce0ff;
+  --lime: #c8ff3c;
+  --mono: 'Share Tech Mono', ui-monospace, Menlo, monospace;
+  --disp: 'Rajdhani', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: radial-gradient(110% 90% at 50% 0%, #0c1411 0%, #050807 55%, #020403 100%);
+  font-family: var(--disp);
+  color: #cdd6d1;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 12px;
+}
+
+@media (orientation: landscape) {
+  .app { flex-direction: row; }
+}
+
+/* --- scope ------------------------------------------------------------- */
+
+.scope-wrap {
+  position: relative;
+  flex: none;
+  width: min(92vmin, 640px);
+  aspect-ratio: 1;
+}
+
+.scope {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #000;
+  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.95);
+}
+
+.scope canvas { width: 100%; height: 100%; display: block; touch-action: manipulation; }
+
+/* phosphor scanlines + inset glow, straight from the mockup */
+.scope::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 50%;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.18) 2px 3px);
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+.scope::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 60px rgba(0, 40, 18, 0.55);
+}
+
+.hud {
+  position: absolute;
+  top: 6.5%;
+  left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5em; /* leaves the compass N visible between the two groups */
+  font-family: var(--mono);
+  font-size: clamp(12px, 2.6vmin, 16px);
+  color: var(--green-soft);
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+.hud .grp { display: flex; align-items: center; gap: 10px; }
+
+.feed-dot {
+  width: 0.7em; height: 0.7em;
+  border-radius: 50%;
+}
+.feed-dot.ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.feed-dot.stale { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+
+.brand {
+  position: absolute;
+  bottom: 2.5%; /* below the compass S */
+  left: 0; right: 0;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: clamp(9px, 1.8vmin, 12px);
+  letter-spacing: 3px;
+  color: var(--green);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.range-ctl {
+  position: absolute;
+  bottom: 10%;
+  left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: clamp(12px, 2.4vmin, 15px);
+  color: var(--green-soft);
+}
+.range-ctl button {
+  width: 2.2em; height: 2.2em;
+  border-radius: 50%;
+  border: 1px solid #2a4a39;
+  background: rgba(16, 35, 26, 0.8);
+  color: var(--green-soft);
+  font-family: var(--mono);
+  font-size: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.range-ctl button:disabled { opacity: 0.3; }
+
+/* --- panel / card / legend (mockup styles) ------------------------------ */
+
+.panel {
+  width: min(90vw, 440px);
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.card {
+  background: linear-gradient(160deg, #14201a, #0a0e0c);
+  border: 1px solid #1f3a2b;
+  border-radius: 16px;
+  padding: 15px 17px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.card-head { display: flex; align-items: center; gap: 11px; margin-bottom: 13px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.call { font-family: var(--mono); font-size: 22px; color: var(--ink); letter-spacing: 1.5px; }
+.badge {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--green-soft);
+  background: #10231a;
+  border: 1px solid #2a4a39;
+  border-radius: 6px;
+  padding: 3px 9px;
+}
+.badge + .badge { margin-left: 6px; }
+
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px 20px; }
+.grid div { display: flex; flex-direction: column; gap: 3px; }
+.grid label {
+  font-family: var(--disp);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #5f7a6c;
+}
+.grid b { font-family: var(--mono); font-size: 15px; color: #dfeee6; font-weight: 400; }
+.grid b.sq-alert { color: var(--red); }
+
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.legend .lt { font-size: 12px; letter-spacing: 1px; color: #7d9588; }
+.legend .bar {
+  flex: 1;
+  min-width: 160px;
+  height: 9px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--red), var(--amber), var(--lime), var(--green), var(--cyan));
+}
+.legend .ticks {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: #6f877a;
+}
+
+/* --- settings ------------------------------------------------------------ */
+
+.gear {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 1px solid #2a4a39;
+  background: rgba(16, 35, 26, 0.85);
+  color: var(--green-soft);
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  padding: 16px;
+}
+
+.settings {
+  width: min(92vw, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+.settings h2 {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 16px;
+  letter-spacing: 2px;
+  color: var(--green-soft);
+  text-transform: uppercase;
+}
+.settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #5f7a6c;
+}
+.settings input, .settings select {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--ink);
+  background: #0a1410;
+  border: 1px solid #2a4a39;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.settings button {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--green-soft);
+  background: #10231a;
+  border: 1px solid #2a4a39;
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+.settings button.primary { color: #041008; background: var(--green); border-color: var(--green); }
+.settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
