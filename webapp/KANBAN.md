@@ -1,9 +1,9 @@
 # Radar Webapp Feature Backlog
 
 ## Priority Levels
-**P1 — Finish in progress:**
-- Smooth aircraft movement (improves core responsiveness)
-- Radar sweep hit detection (enables selection feel)
+**P1 — Finish in progress:** ✅
+- Smooth aircraft movement (animStartMs reset on updates)
+- Radar sweep hit detection (grid-based for 20+ aircraft, configurable)
 
 **P2 — Core radar polish:**
 - Night mode (easy win, big visual impact)
@@ -65,6 +65,11 @@
 - [ ] Airport database (ICAO codes, names)
 - [ ] Custom waypoints
 - [ ] Multi-language support
+
+### Bug Fixes (Completed)
+- [x] Unit conversion (feet/meters, nm/km) in DetailCard and HUD
+- [x] Sweep detection configuration via settings panel
+- [x] Grid-based sweep detection for 20+ aircraft
 
 ## In Progress
 
