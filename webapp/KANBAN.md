@@ -5,10 +5,11 @@
 - Smooth aircraft movement (animStartMs reset on updates)
 - Radar sweep hit detection (grid-based for 20+ aircraft, configurable)
 
-**P2 — Core radar polish:**
-- Night mode (easy win, big visual impact)
-- Flight type filter (high value)
-- History playback (powerful learning tool)
+**P2 — Core radar polish:** ✅ (night mode, filter done)
+- [x] Night mode (red scanlines on black)
+- [x] Flight type filter (commercial, cargo, military, private, other)
+- [x] Nerd mode (toggle for nm, ft, kt always)
+- [ ] History playback (powerful learning tool)
 
 **P3 — Touch interaction:**
 - Pinch-to-zoom gesture
