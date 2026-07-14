@@ -1,16 +1,42 @@
 # Radar Webapp Feature Backlog
 
 ## To Do
-- [ ] Night mode toggle (donkere thema voor nachtelijk gebruik)
-- [ ] Aircraft trail visualization (spoor van vliegtuigen tonen)
-- [ ] Airport database integratie (ICAO codes en namen tonen)
-- [ ] Flight route visualization (vluchtroutes weergeven)
-- [ ] Aircraft photo gallery (foto's van vliegtuigen tonen)
-- [ ] Emergency filter (alleen noodsituaties tonen)
-- [ ] History playback (vorige posities terugkijken)
-- [ ] Custom waypoints (eigen punten toevoegen aan de kaart)
-- [ ] Weather overlay (weersinformatie integreren)
-- [ ] Multi-language support (Nederlands/Engels toggle)
+### Touch Screen Features
+- [ ] Pinch-to-zoom en rotate gebaren
+- [ ] Dubbel tikken voor quick zoom
+- [ ] Lang tikken voor extended aircraft info
+- [ ] Swipe gebaren voor view switching
+- [ ] Tactiele feedback bij aircraft selectie
+- [ ] Screen edge gestures voor snelmenu
+
+### Aircraft Details
+- [ ] Aircraft photo gallery (op basis van registratienummer)
+- [ ] Live aircraft specs (type, snelheid, hoogte histogram)
+- [ ] 3D model viewer (basis van type code)
+- [ ] Flight route visualization (met waypoints)
+- [ ] Detailed telemetry overlay (VS, GS, heading)
+- [ ] Emergency squawk analyzer
+
+### Radar Features
+- [ ] Night mode (donkere thema + rode scanlines)
+- [ ] History playback (tijdlijn slider)
+- [ ] Predictive trails (projected path)
+- [ ] Weather radar overlay
+- [ ] Noise filter voor kleine vliegtuigen
+- [ ] ADS-B raw data view
+
+### Nerdy Extras
+- [ ] API response time metrics
+- [ ] Signal strength visualization  
+- [ ] Aircraft database sync (via OpenSky)
+- [ ] Custom PSR/SSR modes
+- [ ] Antenna bearing calculator
+- [ ] ML-based anomaly detection
+
+### General
+- [ ] Airport database (ICAO codes, names)
+- [ ] Custom waypoints
+- [ ] Multi-language support
 
 ## In Progress
 - [ ] Smooth aircraft movement (animatie tussen posities)
