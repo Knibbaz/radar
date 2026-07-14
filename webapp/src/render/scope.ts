@@ -11,6 +11,11 @@ export interface ScopeGeom {
   rOuter: number; // outer ring radius (218/233 of size/2)
 }
 
+interface SweepState {
+  angleRad: number; // current sweep angle (rad, 0 = north)
+  prevAngleRad: number; // previous frame's angle, for wrap detection
+}
+
 export interface Blip {
   hex: string;
   x: number;
@@ -196,6 +201,39 @@ function drawCenter(ctx: CanvasRenderingContext2D, g: ScopeGeom, s: number, nowM
   ctx.beginPath();
   ctx.arc(cx, cy, 3.2 * s, 0, TAU);
   ctx.fill();
+}
+
+function normalizeAngle(rad: number): number {
+  let a = rad % TAU;
+  return a < 0 ? a + TAU : a;
+}
+
+function angleInWedge(blipAngleRad: number, sweepAngleRad: number, wedgeRad: number): boolean {
+  const diff = normalizeAngle(blipAngleRad - sweepAngleRad);
+  return diff <= wedgeRad || diff >= TAU - wedgeRad;
+}
+
+export function detectSweepHits(
+  nowMs: number,
+  blips: Blip[],
+  g: ScopeGeom,
+  sweepState: SweepState,
+): Set<string> {
+  const sweepAngleRad = ((nowMs % SWEEP_PERIOD_MS) / SWEEP_PERIOD_MS) * TAU; // 0 = north
+  const wedgeRad = (40 * DEG) / 2; // half-width of sweep wedge
+
+  const hitsNow = new Set<string>();
+  for (const b of blips) {
+    const dx = b.x - g.cx;
+    const dy = b.y - g.cy;
+    const blipAngleRad = Math.atan2(dx, -dy); // canvas coords: y down, but we want 0 = north
+    if (angleInWedge(blipAngleRad, sweepAngleRad, wedgeRad)) {
+      hitsNow.add(b.hex);
+    }
+  }
+  sweepState.prevAngleRad = sweepState.angleRad;
+  sweepState.angleRad = sweepAngleRad;
+  return hitsNow;
 }
 
 export function drawScope(

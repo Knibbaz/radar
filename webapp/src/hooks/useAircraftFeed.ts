@@ -42,6 +42,7 @@ export function useAircraftFeed(settings: Settings) {
           if (haversineKm(p.lat, p.lon, ac.lat, ac.lon) <= SNAP_KM) {
             ac.prevLat = p.lat;
             ac.prevLon = p.lon;
+            ac.animStartMs = now; // reset glide timer for new position
           }
         }
         store.set(ac.hex, ac);
