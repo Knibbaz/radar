@@ -17,3 +17,6 @@ dist/
 
 # Secrets (WiFi creds live in NVS on the device, never in the repo)
 secrets.h
+.aider.tags.cache.v4/
+.aider.chat.history.md
+.aider.input.history
