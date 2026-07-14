@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { RANGE_STEPS_KM } from '../lib/config';
+import type { Settings } from '../hooks/useSettings';
 
 interface Props {
   count: number;
   feedOk: boolean;
   rangeKm: number;
+  settings: Settings;
   onRange: (km: number) => void;
 }
 
-export default function Hud({ count, feedOk, rangeKm, onRange }: Props) {
+export default function Hud({ count, feedOk, rangeKm, settings, onRange }: Props) {
   const [clock, setClock] = useState('');
   useEffect(() => {
     const tick = () =>
@@ -36,7 +38,7 @@ export default function Hud({ count, feedOk, rangeKm, onRange }: Props) {
       <div className="range-ctl">
         {/* − widens the range (zoom out), + narrows it (zoom in), like a map */}
         <button onClick={() => step(1)} disabled={idx >= RANGE_STEPS_KM.length - 1} aria-label="zoom out">−</button>
-        <span>{rangeKm} km</span>
+        <span>{settings.units === 'metric' ? `${rangeKm} km` : `${(rangeKm * 0.539957).toFixed(0)} nm`}</span>
         <button onClick={() => step(-1)} disabled={idx <= 0} aria-label="zoom in">+</button>
       </div>
       <div className="brand">CAPSULE RADAR</div>

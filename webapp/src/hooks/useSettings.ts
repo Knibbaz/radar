@@ -7,6 +7,7 @@ export interface Settings {
   rangeKm: number;
   units: 'aviation' | 'metric';
   pollIntervalMs: number;
+  sweepDetectionEnabled: boolean;
 }
 
 const KEY = 'radar.settings';
@@ -17,6 +18,7 @@ const DEFAULTS: Settings = {
   rangeKm: RANGE_KM_DEFAULT,
   units: 'aviation',
   pollIntervalMs: POLL_INTERVAL_MS,
+  sweepDetectionEnabled: true,
 };
 
 function load(): Settings {

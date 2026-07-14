@@ -35,8 +35,8 @@ export default function RadarCanvas({ settings, storeRef, pollMsRef, selectedHex
   // zoom glide: the displayed range eases toward settings.rangeKm
   const zoomRef = useRef({ from: settings.rangeKm, to: settings.rangeKm, startMs: 0 });
 
-  // sweep hit tracking: only trigger feedback on new hits
-  const sweepStateRef = useRef({ angleRad: 0, prevAngleRad: 0 });
+  // sweep hit tracking: only trigger feedback on new hits (grid-based for 20+ aircraft)
+  const sweepStateRef = useRef({ angleRad: 0, prevAngleRad: 0, lastGridCell: -1 });
   const prevSweepHitsRef = useRef(new Set<string>());
 
   useEffect(() => {
@@ -97,26 +97,28 @@ export default function RadarCanvas({ settings, storeRef, pollMsRef, selectedHex
       blipsRef.current = blips;
 
       // detect sweep hits for audio/visual feedback
-      const sweepHits = detectSweepHits(now, blips, g, sweepStateRef.current);
-      const newHits = new Set([...sweepHits].filter((hex) => !prevSweepHitsRef.current.has(hex)));
-      if (newHits.size > 0) {
-        // trigger sweep feedback (visual pulse handled by rendering, audio via callback)
-        try {
-          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const osc = audioCtx.createOscillator();
-          const gain = audioCtx.createGain();
-          osc.connect(gain);
-          gain.connect(audioCtx.destination);
-          osc.frequency.value = 800; // Hz
-          gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-          osc.start(audioCtx.currentTime);
-          osc.stop(audioCtx.currentTime + 0.1);
-        } catch {
-          // audio context not available, silently ignore
+      if (st.sweepDetectionEnabled) {
+        const sweepHits = detectSweepHits(now, blips, g, sweepStateRef.current);
+        const newHits = new Set([...sweepHits].filter((hex) => !prevSweepHitsRef.current.has(hex)));
+        if (newHits.size > 0) {
+          // trigger sweep feedback (visual pulse handled by rendering, audio via callback)
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.value = 800; // Hz
+            gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.1);
+          } catch {
+            // audio context not available, silently ignore
+          }
         }
+        prevSweepHitsRef.current = sweepHits;
       }
-      prevSweepHitsRef.current = sweepHits;
 
       drawScope(ctx, g, now, rangeNow, blips, sel);
     };

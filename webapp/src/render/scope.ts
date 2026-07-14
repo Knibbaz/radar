@@ -14,6 +14,7 @@ export interface ScopeGeom {
 interface SweepState {
   angleRad: number; // current sweep angle (rad, 0 = north)
   prevAngleRad: number; // previous frame's angle, for wrap detection
+  lastGridCell: number; // track which grid cell the sweep is in (0-7 for 45° sectors)
 }
 
 export interface Blip {
@@ -38,7 +39,13 @@ const GREEN = '#1dff86';
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
 // Aircraft glyph from the mockup, pointing north at scale 1.
-const GLYPH = new Path2D('M0,-9 L2,-1 L9,3 L2,3 L3,8 L0,6.5 L-3,8 L-2,3 L-9,3 L-2,-1 Z');
+let GLYPH: Path2D | null = null;
+function getGlyph(): Path2D {
+  if (!GLYPH && typeof Path2D !== 'undefined') {
+    GLYPH = new Path2D('M0,-9 L2,-1 L9,3 L2,3 L3,8 L0,6.5 L-3,8 L-2,3 L-9,3 L-2,-1 Z');
+  }
+  return GLYPH!;
+}
 
 const mono = (px: number) => `${px}px 'Share Tech Mono', ui-monospace, monospace`;
 
@@ -156,7 +163,7 @@ function drawBlip(ctx: CanvasRenderingContext2D, g: ScopeGeom, s: number, nowMs:
   ctx.fillStyle = b.color;
   ctx.shadowColor = b.color;
   ctx.shadowBlur = 3; // in glyph units; cheap glow like the mockup filter
-  ctx.fill(GLYPH);
+  ctx.fill(getGlyph());
   ctx.restore();
 
   // labels: to the right, flipped left near the right rim so they stay on-screen
@@ -223,14 +230,42 @@ export function detectSweepHits(
   const wedgeRad = (40 * DEG) / 2; // half-width of sweep wedge
 
   const hitsNow = new Set<string>();
-  for (const b of blips) {
-    const dx = b.x - g.cx;
-    const dy = b.y - g.cy;
-    const blipAngleRad = Math.atan2(dx, -dy); // canvas coords: y down, but we want 0 = north
-    if (angleInWedge(blipAngleRad, sweepAngleRad, wedgeRad)) {
-      hitsNow.add(b.hex);
+
+  // For many aircraft, use grid-based detection (8 cells = 45° sectors)
+  // to avoid audio spam. For few aircraft, detect every blip.
+  const useGridDetection = blips.length >= 20;
+
+  if (useGridDetection) {
+    // Calculate which 45° grid cell the sweep is in (0-7)
+    const gridCellSize = TAU / 8;
+    const currentGridCell = Math.floor(sweepAngleRad / gridCellSize) % 8;
+
+    // Only trigger if sweep entered a new grid cell
+    if (currentGridCell !== sweepState.lastGridCell) {
+      // Find if any aircraft are in this cell
+      for (const b of blips) {
+        const dx = b.x - g.cx;
+        const dy = b.y - g.cy;
+        const blipAngleRad = Math.atan2(dx, -dy);
+        const blipGridCell = Math.floor(normalizeAngle(blipAngleRad) / gridCellSize) % 8;
+        if (blipGridCell === currentGridCell) {
+          hitsNow.add(b.hex);
+        }
+      }
+      sweepState.lastGridCell = currentGridCell;
+    }
+  } else {
+    // For few aircraft, detect every blip in sweep wedge
+    for (const b of blips) {
+      const dx = b.x - g.cx;
+      const dy = b.y - g.cy;
+      const blipAngleRad = Math.atan2(dx, -dy);
+      if (angleInWedge(blipAngleRad, sweepAngleRad, wedgeRad)) {
+        hitsNow.add(b.hex);
+      }
     }
   }
+
   sweepState.prevAngleRad = sweepState.angleRad;
   sweepState.angleRad = sweepAngleRad;
   return hitsNow;

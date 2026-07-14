@@ -32,6 +32,7 @@ export default function App() {
           count={status.count}
           feedOk={status.lastPollOk}
           rangeKm={settings.rangeKm}
+          settings={settings}
           onRange={(rangeKm) => setSettings({ rangeKm })}
         />
       </div>

@@ -94,6 +94,14 @@ export default function SettingsPanel({ settings, onSave }: Props) {
             <option value={10000}>10 s</option>
           </select>
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={draft.sweepDetectionEnabled}
+            onChange={(e) => setDraft({ ...draft, sweepDetectionEnabled: e.target.checked })}
+          />
+          Sweep radar hit detection (audio beep)
+        </label>
         <div className="settings-actions">
           <button onClick={() => setOpen(false)}>Cancel</button>
           <button className="primary" onClick={save}>Save</button>

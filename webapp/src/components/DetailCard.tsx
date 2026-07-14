@@ -32,6 +32,10 @@ function fmtSpd(gs: number | null, metric: boolean): string {
   return metric ? `${Math.round(gs * KT_TO_KMH)} km/h` : `${Math.round(gs)} kt`;
 }
 
+function fmtDist(km: number, metric: boolean): string {
+  return metric ? `${km.toFixed(1)} km` : `${(km * 0.539957).toFixed(1)} nm`;
+}
+
 export default function DetailCard({ aircraft: ac, settings }: Props) {
   if (!ac) {
     return (
@@ -62,7 +66,7 @@ export default function DetailCard({ aircraft: ac, settings }: Props) {
         <div><label>Vert. speed</label><b>{fmtVs(ac.baroRateFpm, metric)}</b></div>
         <div><label>Speed</label><b>{fmtSpd(ac.gsKt, metric)}</b></div>
         <div><label>Heading</label><b>{ac.track != null ? `${Math.round(ac.track)}°` : '—'}</b></div>
-        <div><label>Distance</label><b>{distKm.toFixed(1)} km · {Math.round(brg)}°</b></div>
+        <div><label>Distance</label><b>{fmtDist(distKm, metric)} · {Math.round(brg)}°</b></div>
         <div>
           <label>Squawk</label>
           <b className={emergency ? 'sq-alert' : undefined}>
