@@ -124,6 +124,14 @@ export default function SettingsPanel({ settings, onSave }: Props) {
             <option value="other">Other</option>
           </select>
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={draft.nerdMode}
+            onChange={(e) => setDraft({ ...draft, nerdMode: e.target.checked })}
+          />
+          Nerd mode (nm, ft, kt always)
+        </label>
         <div className="settings-actions">
           <button onClick={() => setOpen(false)}>Cancel</button>
           <button className="primary" onClick={save}>Save</button>

@@ -54,6 +54,18 @@
 - [ ] ADS-B raw data view
 
 ### Nerdy Extras
+- [ ] **NERD MODE** (show technical details)
+  - Display range in nm only (not km)
+  - Display altitudes in feet only (override metric mode)
+  - Display speeds in kt only (override metric mode)
+  - Show ICAO hex (6-digit) in glyph hover
+  - Show squawk as octal + decimal (e.g., 1234 = 2322 oct)
+  - Show data age (seen_pos seconds)
+  - Show exact lat/lon to 4 decimals
+  - Show vert. speed in fpm (ft/min) not m/s
+  - Show track/heading + magnetic variance
+  - Display poll cadence (measured vs target)
+  - Maybe: show ADS-B signal info if available
 - [ ] API response time metrics
 - [ ] Signal strength visualization  
 - [ ] Aircraft database sync (via OpenSky)

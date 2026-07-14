@@ -47,7 +47,7 @@ export default function DetailCard({ aircraft: ac, settings }: Props) {
     );
   }
 
-  const metric = settings.units === 'metric';
+  const metric = settings.units === 'metric' && !settings.nerdMode;
   const distKm = haversineKm(settings.homeLat, settings.homeLon, ac.lat, ac.lon);
   const brg = bearingDeg(settings.homeLat, settings.homeLon, ac.lat, ac.lon);
   const emergency = isEmergency(ac.squawk);

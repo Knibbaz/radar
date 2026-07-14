@@ -12,6 +12,7 @@ export interface Settings {
   sweepDetectionEnabled: boolean;
   nightMode: boolean;
   flightTypeFilter: FlightTypeFilter;
+  nerdMode: boolean;
 }
 
 const KEY = 'radar.settings';
@@ -25,6 +26,7 @@ const DEFAULTS: Settings = {
   sweepDetectionEnabled: true,
   nightMode: false,
   flightTypeFilter: 'all',
+  nerdMode: false,
 };
 
 function load(): Settings {
