@@ -31,6 +31,13 @@
 #  define FB_LOG(...) fprintf(stderr, __VA_ARGS__)
 #endif
 
+// Color palette for the admin overlay. Mirrors the constants in ui.cpp so the
+// admin screen matches the rest of the kiosk's phosphor-green theme.
+#define UI_GREEN lv_color_hex(0x1DFF86)
+#define UI_INK   lv_color_hex(0xEAFFF3)
+#define UI_SOFT  lv_color_hex(0x9AFFC8)
+#define UI_DIM   lv_color_hex(0x5F7A6C)
+
 // =============================================================================
 // theme API (kept so the web config handlers in main.cpp still compile)
 // =============================================================================

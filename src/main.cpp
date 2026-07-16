@@ -697,7 +697,12 @@ void setup() {
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
     // Hardware watchdog: reset the device if the UI loop ever locks up for >30 s.
-    (void)esp_task_wdt_init(30, true);
+    const esp_task_wdt_config_t wdt_cfg = {
+        .timeout_ms     = 30000,
+        .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,   // watch both cores
+        .trigger_panic  = true,
+    };
+    (void)esp_task_wdt_init(&wdt_cfg);
     esp_task_wdt_add(nullptr);   // protect the calling (loop) task
     Serial.println("[wdt] watchdog armed (30 s)");
 

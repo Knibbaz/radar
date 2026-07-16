@@ -4,17 +4,25 @@
 // the native simulator all of those are stubbed out and the only persistent
 // surface is ./feedback.csv (opened via stdio, fails silently if missing).
 
+// Arduino headers (HTTPClient, WiFi) must be included OUTSIDE the feedback_log
+// namespace: they pull in <memory> which uses unqualified std:: names, and
+// inside `namespace feedback_log` those would resolve to feedback_log::std::*.
 #include "feedback_log.h"
 #include "config.h"
 #include "feedback_view.h"            // applySettings() pushes through view setters
 
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
+#include <ctime>                       // struct tm (C++ header; <time.h> doesn't always expose it)
+#include <cstring>                     // memcpy
 
 #if defined(ESP_PLATFORM)
 #  include <Arduino.h>
 #  include <Preferences.h>
+#  include <HTTPClient.h>
+#  include <WiFi.h>
+#  include <freertos/FreeRTOS.h>
+#  include <freertos/queue.h>
 #  define FB_LOG(...)  Serial.printf(__VA_ARGS__)
 #  define FB_PATH      "/sdcard/feedback.csv"     // ESP32 SD library default mount
 #else
@@ -23,6 +31,14 @@
 #endif
 
 namespace feedback_log {
+// The Arduino HTTPClient (included below on device) pulls in <memory>, which
+// uses unqualified std:: names. Because we're inside `namespace feedback_log`,
+// the compiler would otherwise resolve `std::move` as `feedback_log::std::move`
+// and fail. Reopen `std` here so the lookups succeed.
+namespace std { }
+using namespace std;
+
+namespace _fb_log_inner {
 
 // =========================================================================
 // RAM ring buffer (capacity 500)
@@ -127,10 +143,6 @@ static void csv_append(const Event &e) {
 // Optional webhook (device only -- low-priority FreeRTOS task)
 // =========================================================================
 #if defined(ESP_PLATFORM)
-#  include <freertos/FreeRTOS.h>
-#  include <freertos/queue.h>
-#  include <HTTPClient.h>
-#  include <WiFi.h>
 
 static QueueHandle_t s_q    = nullptr;
 static TaskHandle_t  s_task = nullptr;
