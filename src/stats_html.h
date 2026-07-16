@@ -145,16 +145,13 @@ static int render_html(char *out, size_t cap) {
             const uint32_t gd  = heat.cell[wd][dp].good;
             const char *cls = (tot == 0) ? "empty" : "";
             const char *bg  = heat_color((int)gd, (int)tot);
-            const char *lbl = (tot == 0) ? "&mdash;" :
-                              (snprintf((char*)out + n, 1, "%s", ""), "");
-            (void)lbl;
             n += snprintf(out + n, cap - n,
-                "<td style='background:%s' class='%s'>%s</td>",
-                bg, cls, tot == 0 ? "&mdash;" : "");
-            // content: render the count + percent inline so the cell is the info source itself
+                "<td style='background:%s' class='%s'>", bg, cls);
             if (tot > 0) {
                 const int pct = (gd * 100) / tot;
                 n += snprintf(out + n, cap - n, "%d%% (%u)", pct, (unsigned)gd);
+            } else {
+                n += snprintf(out + n, cap - n, "&mdash;");
             }
             n += snprintf(out + n, cap - n, "</td>");
             if ((size_t)n >= cap) return 0;

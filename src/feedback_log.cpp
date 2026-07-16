@@ -272,6 +272,7 @@ void record(uint8_t answer) {
 // =========================================================================
 // Operator settings (NVS namespace "kiosk")
 // =========================================================================
+#if defined(ESP_PLATFORM)
 static void cpy(char *dst, size_t cap, const String &src) {
     if (!dst || cap == 0) return;
     const int n = src.length();
@@ -279,6 +280,7 @@ static void cpy(char *dst, size_t cap, const String &src) {
     memcpy(dst, src.c_str(), m);
     dst[m] = 0;
 }
+#endif
 
 void loadSettings(Settings &out) {
 #if defined(ESP_PLATFORM)

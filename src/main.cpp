@@ -798,11 +798,11 @@ void loop() {
         const uint32_t fr = display_frames();
         const unsigned fps = (fr - lastFrames) / 5;
         lastFrames = fr;
-        Serial.printf("[mem] heap %u (min %u, biggest %u) | psram %u free | up %lus | aircraft %d | fps %u\n",
+        Serial.printf("[mem] heap %u (min %u, biggest %u) | psram %u free | up %lus | fps %u\n",
                       (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
                       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
                       (unsigned)ESP.getFreePsram(), (unsigned long)(millis() / 1000),
-                      (int)g_snap.size(), fps);
+                      fps);
 #endif
         char clk[8] = "--:--";
         struct tm ti;
