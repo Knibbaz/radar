@@ -1,10 +1,21 @@
 #pragma once
-// Full-screen placeholder view for the customer-feedback terminal.
-// Stands in where the radar scope used to live: ui.cpp wires up the top HUD
-// on top of this content. The actual smiley / rating UI will replace this.
+// Customer-feedback kiosk view.
+//
+// Four-state machine layered on top of LVGL v8:
+//
+//   IDLE      question text + three large smileys (GOOD / NEUTRAL / BAD)
+//   THANKS    full-screen green panel with check mark + "Bedankt"  (~1.5s)
+//   QR        review QR (GOOD) or internal form QR + smaller public QR
+//             (NEUTRAL/BAD). Auto-returns to IDLE after ~12s, or on tap.
+//   COOLDOWN  progress arc on the screen edge while taps are absorbed,
+//             to keep rapid-fire taps from polluting the rating stats.
+//
+// ui.cpp wires the top HUD (WiFi / clock / battery / date) up on top of
+// this content. The radar-era knobs (sweep, airports, trail, etc.) are
+// kept as no-op stubs so the web config plumbing still round-trips through
+// NVS without changing the call sites in main.cpp.
 #include <lvgl.h>
 
-// Theme indices (kept in sync with the web config page's <select> options).
 enum FeedbackTheme {
     FEEDBACK_THEME_PHOSPHOR = 0,
     FEEDBACK_THEME_ORB      = 1,
@@ -13,9 +24,18 @@ enum FeedbackTheme {
     FEEDBACK_THEME_COUNT    = 4
 };
 
+// What the user rated. Logged on each tap (timestamp comes from time()).
+// Persistence / stats aggregation is layered on top in a later step.
+enum FeedbackAnswer {
+    FEEDBACK_GOOD    = 1,
+    FEEDBACK_NEUTRAL = 2,
+    FEEDBACK_BAD     = 3
+};
+
 namespace feedback_view {
 
-// Build the placeholder (a centered "FEEDBACK KIOSK" label on true black).
+// Build all four state surfaces as children of `lv_parent`. Safe to call
+// once; a second call is a no-op.
 void init(void* lv_parent);
 
 // Reserved for future data-driven updates; no-op for now.

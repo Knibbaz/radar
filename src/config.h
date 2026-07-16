@@ -41,6 +41,18 @@ static const float RANGE_STEPS_KM[] = {10.0f, 20.0f, 30.0f, 50.0f, 100.0f};
 #define ADSB_HTTPS_INSECURE 1               // 1 = setInsecure() (hobby). 0 = use pinned root CA.
 #define ADSB_MAX_AIRCRAFT   60              // hard cap parsed per poll (protect RAM in busy areas)
 
+// ---------- Feedback (smileys -> QR codes) ----------------------------
+// Dutch by default; the operator's web config page will let them change the
+// question text + the two URLs later. URLs are placeholders for now.
+#define FEEDBACK_QUESTION         "Hoe was uw bezoek?"
+#define FEEDBACK_URL_REVIEW       "https://g.page/r/PLACEHOLDER-REVIEW"
+#define FEEDBACK_URL_INTERNAL     "https://feedback.local/form"
+#define FEEDBACK_THANKS_MS        1500        // "Bedankt" overlay duration
+#define FEEDBACK_QR_MS            12000       // QR screen auto-returns to IDLE
+#define FEEDBACK_COOLDOWN_MS      4000        // tap-absorb window after each interaction
+#define FEEDBACK_SMILEY_DIA       110         // visual diameter of each smiley (px)
+#define FEEDBACK_HITBOX_MIN       120         // minimum touch hit box per smiley (px)
+
 // ---------- Debug ----------
 #define DEBUG_MEM           0               // 1 = print a [mem] heap/fps line every 5s on serial
 

@@ -26,9 +26,10 @@
    MEMORY SETTINGS
  *=========================*/
 /* Object/style pool (internal RAM). Big bitmap draw buffers are allocated
-   separately in PSRAM in display.cpp. Bump this if the radar UI grows. */
+   separately in PSRAM in display.cpp. Bumped to 128K for the QR feedback
+   view (each lv_qrcode keeps a size*size RGB565 buffer). */
 #define LV_MEM_CUSTOM 0
-#define LV_MEM_SIZE (64U * 1024U)
+#define LV_MEM_SIZE (128U * 1024U)
 #define LV_MEM_ADR 0
 #define LV_MEM_BUF_MAX_NUM 16
 #define LV_MEMCPY_MEMSET_STD 0
@@ -93,6 +94,7 @@
 #define LV_USE_SPINNER 1
 #define LV_USE_LIST 1
 #define LV_USE_TILEVIEW 1
+#define LV_USE_QRCODE 1              // feedback QR codes (src/feedback_view.cpp)
 
 #endif /* LV_CONF_H */
 #endif /* Enable content */
