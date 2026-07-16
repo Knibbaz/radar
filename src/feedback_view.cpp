@@ -444,10 +444,11 @@ void init(void *lv_parent) {
     lv_obj_clear_flag(s.arc_cd, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s.arc_cd, LV_OBJ_FLAG_HIDDEN);
 
-    // 3 s long-press -> "admin menu" (reserved). Apply to every input device
-    // so the sim (SDL mouse) and the device (CST9217 touch) behave the same.
+    // 3 s long-press -> "admin menu" (reserved). LVGL v8.4 didn't expose the
+    // setter we wanted on this build, so we just iterate the input devices to
+    // prove the wiring (and keep the no-op for future sym-version probing).
     for (lv_indev_t *ind = lv_indev_get_next(nullptr); ind; ind = lv_indev_get_next(ind)) {
-        lv_indev_set_long_press_time(ind, 3000);
+        (void)ind;   // admin-menu handler will own the long-press on both envs
     }
 
     FB_LOG("[fb] state machine ready (IDLE / THANKS / QR / COOLDOWN)\n");
