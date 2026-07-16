@@ -38,8 +38,6 @@ namespace feedback_log {
 namespace std { }
 using namespace std;
 
-namespace _fb_log_inner {
-
 // =========================================================================
 // RAM ring buffer (capacity 500)
 // =========================================================================
