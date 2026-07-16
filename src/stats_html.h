@@ -54,7 +54,7 @@ static inline const char *daypart_name(int dp) {
 static int render_html(char *out, size_t cap) {
     if (!out || cap == 0) return 0;
 
-    const DayCount today = feedback_log::day(0);
+    const feedback_log::DayCount today = feedback_log::day(0);
     const uint32_t td_total = today.good + today.neutral + today.bad;
     const int td_happy = (td_total > 0) ? (int)((today.good * 100) / td_total) : 0;
 
@@ -177,7 +177,7 @@ static int render_html(char *out, size_t cap) {
 static int render_json(char *out, size_t cap) {
     if (!out || cap == 0) return 0;
 
-    const DayCount today = feedback_log::day(0);
+    const feedback_log::DayCount today = feedback_log::day(0);
     const uint32_t td_total = today.good + today.neutral + today.bad;
     const int td_happy = (td_total > 0) ? (int)((today.good * 100) / td_total) : 0;
 
