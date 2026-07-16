@@ -31,12 +31,6 @@
 #endif
 
 namespace feedback_log {
-// The Arduino HTTPClient (included below on device) pulls in <memory>, which
-// uses unqualified std:: names. Because we're inside `namespace feedback_log`,
-// the compiler would otherwise resolve `std::move` as `feedback_log::std::move`
-// and fail. Reopen `std` here so the lookups succeed.
-namespace std { }
-using namespace std;
 
 // =========================================================================
 // RAM ring buffer (capacity 500)
