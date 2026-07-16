@@ -2,24 +2,16 @@
 // Order of work is in CLAUDE.md (milestones). Bring up the Waveshare demo first.
 #include <Arduino.h>
 #include <WiFi.h>
-#include <vector>
 #include "config.h"
-#include "aircraft.h"
-#include "geo.h"
-#include "adsb_client.h"
-#include "route.h"
-#include "route_client.h"
-#include "photo.h"
-#include "photo_client.h"
-#include "radar_view.h"
+#include "geo.h"                     // GPS distance check (haversine)
+#include "feedback_view.h"           // placeholder main canvas (was radar_view)
 #include "ui.h"
 #include "display.h"                  // M0: CO5300 + LVGL bring-up
 #include "imu_qmi8658.h"             // face-down sleep
 #include "gps.h"                     // LC76G GNSS (-G variant only)
 #include "battery.h"                 // AXP2101 battery gauge
 #include "rtc_pcf85063.h"            // PCF85063 RTC (offline clock + date)
-#include "audio.h"                   // ES8311 alert pings
-#include <set>                       // audio: track which contacts are in range
+#include "audio.h"                   // ES8311 audio (alert pings later)
 #include <string>
 #include <WiFiManager.h>             // captive portal
 #include <Preferences.h>            // NVS (persist theme/settings)
@@ -33,10 +25,6 @@
 #include <nvs.h>                    // erase the driver's "nvs.net80211" namespace (WiFi reset)
 
 // ---- shared state ----
-static std::vector<Aircraft> g_aircraft;      // latest snapshot
-static SemaphoreHandle_t     g_ac_mutex;      // guards g_aircraft
-static volatile bool         g_acDirty = false; // set when a new snapshot is ready
-static AdsbClient            g_adsb;
 static RadarSettings         g_settings;
 static WiFiManager           g_wm;
 static int                   g_brightnessDay = BRIGHTNESS_DEFAULT;   // user brightness (web/NVS)
@@ -57,11 +45,6 @@ static int                   g_trailLen = 2;                         // aircraft
 static int                   g_maxAc = 20;                           // max aircraft drawn on the scope (web/NVS)
 static volatile bool         g_onBattery = false;                    // discharging (set on core 1, read on core 0)
 static bool                  g_rtcSynced = false;                    // RTC written from NTP this session?
-static std::vector<Aircraft> g_snap;                                 // last snapshot (instant re-render on zoom)
-static volatile bool         g_requery = false;                      // range changed -> adsb_task re-begins
-static float                 g_requeryKm = 0.0f;
-static volatile bool         g_feedOk = true;                        // ADS-B feed healthy? (HUD warning)
-static volatile uint32_t     g_lastFeedOkMs = 0;                     // millis() of the last good poll (HUD staleness)
 static volatile uint32_t     g_rebootAtMs = 0;                       // !=0: reboot when millis() reaches it (clean start after WiFi config)
 static String                g_tz = TZ_STR;                          // POSIX timezone (web-configurable, NVS); applied via configTzTime
 
@@ -91,88 +74,6 @@ static const struct { const char *label; const char *tz; int offMin; int dst; } 
 };
 static const int TZOPTS_N = sizeof(TZOPTS) / sizeof(TZOPTS[0]);
 
-// ---- networking task (core 0): fetch + parse, never touches the display ----
-static void adsb_task(void*) {
-    std::vector<Aircraft> fresh;
-    bool wasConnected = false;
-    uint32_t lastPoll = 0;
-    uint32_t lastFeedOk = millis();          // self-heal: time of last good (or no-WiFi) poll
-    for (;;) {
-        const bool conn = (WiFi.status() == WL_CONNECTED);
-        if (conn && !wasConnected) {
-            // disable WiFi modem power-save: on a mains-powered desk gadget it just adds latency
-            // and makes RSSI bounce (feed goes stale -> amber bars) even sitting next to the router.
-            WiFi.setSleep(false);
-            Serial.printf("[adsb] WiFi up, IP %s\n", WiFi.localIP().toString().c_str());
-            configTzTime(g_tz.c_str(), "pool.ntp.org", "time.nist.gov");  // local time (web-configurable TZ)
-            Serial.println("[web] config: http://capsuleradar.local/  (or the IP above)");
-            // mDNS + OTA are started on core 1 (loop) to keep all mDNS use on one core
-        }
-        wasConnected = conn;
-        // self-heal: a long feed outage while WiFi is up usually means the internal heap
-        // fragmented and the TLS handshake can't allocate -> reboot to recover (settings persist).
-        if (!conn) lastFeedOk = millis();
-        else if (millis() - lastFeedOk > 180000UL) {
-            Serial.println("[adsb] feed stuck >180s with WiFi up -> restarting to recover");
-            delay(100);
-            ESP.restart();
-        }
-        if (g_requery) {                          // display range changed (double-tap zoom)
-            g_adsb.begin(g_settings.homeLat, g_settings.homeLon, g_requeryKm);
-            g_requery = false;
-            lastPoll = 0;                         // poll immediately at the new radius
-        }
-        if (conn) {
-            // The live aircraft feed is the primary job, so poll FIRST every cycle. That keeps
-            // it refreshing even while the user taps around — a slow route/photo lookup (below)
-            // can block this single network task, so it must never get ahead of the feed.
-            const uint32_t nowMs = millis();
-            const uint32_t pollInterval = g_onBattery ? POLL_INTERVAL_BATTERY_MS : POLL_INTERVAL_MS;
-            if (lastPoll == 0 || nowMs - lastPoll >= pollInterval) {  // aircraft feed
-                lastPoll = nowMs;
-                static int failCount = 0;
-                // poll() flips to the alternate host on failure, so consecutive polls already
-                // alternate hosts; a single transient miss is absorbed by the failCount window.
-                if (g_adsb.poll(fresh)) {
-                    Serial.printf("[adsb] fetched %u aircraft\n", (unsigned)fresh.size());
-                    failCount = 0;
-                    g_feedOk = true;
-                    lastFeedOk = nowMs;
-                    g_lastFeedOkMs = nowMs;          // HUD: mark data as fresh
-                    if (xSemaphoreTake(g_ac_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-                        g_aircraft.swap(fresh);   // O(1) handoff: no per-Aircraft String copies under the lock
-                        g_acDirty = true;
-                        xSemaphoreGive(g_ac_mutex);
-                    }
-                } else {
-                    Serial.println("[adsb] poll failed");
-                    if (++failCount >= 5) g_feedOk = false;   // sustained outage -> HUD warning
-                }
-            }
-            // Then the on-demand lookups for the selected aircraft. Their timeouts are kept
-            // short (see photo_client / route_client) so a slow photo server can't freeze the
-            // feed for long; the next loop iteration polls again as soon as they return.
-            char wantCall[12];
-            if (route_pending(wantCall, sizeof(wantCall))) {
-                char from[40] = "", to[40] = "";
-                if (route_cache_get(wantCall, from, sizeof(from), to, sizeof(to))) {
-                    route_store(wantCall, from, to);                       // NVS hit, no network
-                    Serial.printf("[route] %s (cache): '%s' -> '%s'\n", wantCall, from, to);
-                } else if (route_fetch(wantCall, from, sizeof(from), to, sizeof(to))) {
-                    route_store(wantCall, from, to);
-                    route_cache_put(wantCall, from, to);                  // remember across reboots
-                    Serial.printf("[route] %s (net): '%s' -> '%s'\n", wantCall, from, to);
-                } else {
-                    route_store(wantCall, from, to);   // empty -> don't refetch this session
-                    Serial.printf("[route] %s: no route\n", wantCall);
-                }
-            }
-            char wantHex[10];
-            if (photo_pending(wantHex, sizeof(wantHex))) photo_fetch(wantHex);
-        }
-        vTaskDelay(pdMS_TO_TICKS(250));
-    }
-}
 
 static void loadSettings() {
     Preferences p;
@@ -194,56 +95,7 @@ static void loadSettings() {
     p.end();
 }
 
-// Audio alerts. g_alertMode: 0 = off, 1 = emergencies only, 2 = new aircraft + emergencies.
-// g_proximityKm > 0 also pings (once) when any aircraft crosses into that radius.
-static void checkAudioEvents() {
-    if (!audio_present()) return;
-    static std::set<std::string> seen, seenProx;
-    static bool first = true;
-    static uint32_t lastNew = 0;
-    std::set<std::string> now, nowProx;
-    for (const Aircraft &ac : g_snap) {
-        const double d = geo::haversineKm(g_settings.homeLat, g_settings.homeLon, ac.lat, ac.lon);
-        if (d > g_settings.rangeKm) continue;                 // in-range only
-        const std::string hex = ac.hex.c_str();
-        now.insert(hex);
-        const bool isNew     = !first && !seen.count(hex);
-        const bool emergency = acIsEmergency(ac.squawk) || ac.military;  // military: feed dbFlags
 
-        // proximity: fire once, when an aircraft first crosses into the radius (any aircraft)
-        if (g_proximityKm > 0.0f && d <= g_proximityKm) {
-            nowProx.insert(hex);
-            if (!first && !seenProx.count(hex)) audio_play(AUDIO_ALERT);
-        }
-
-        // new-in-range pings (on entry), gated by the alert mode
-        if (isNew) {
-            if (emergency) { if (g_alertMode >= 1) audio_play(AUDIO_ALERT); }   // emergencies only / +new
-            else if (g_alertMode >= 2 && millis() - lastNew > 3000) {
-                audio_play(AUDIO_NEW);                                          // new contact (rate-limited)
-                lastNew = millis();
-            }
-        }
-    }
-    seen.swap(now);
-    seenProx.swap(nowProx);
-    first = false;
-}
-
-// Double-tap zoom: change the display range, persist it, and ask adsb_task to
-// re-query at a matching radius (safely, on its own core). Re-render immediately.
-static void onRangeChange(float km) {
-    g_settings.rangeKm = km;
-    Preferences p;
-    p.begin("capsuleradar", false);
-    p.putFloat("rangeKm", km);
-    p.end();
-    g_requeryKm = constrain(km * 1.6f, 50.0f, 200.0f);
-    g_requery = true;
-    radar::update(g_snap, g_settings);   // instant visual zoom from the last snapshot
-    ui_set_range_km(km);
-    ui_on_data_updated();
-}
 
 // Persist the visual theme in NVS (called when the user long-presses to switch).
 static void saveTheme(int t) {
@@ -285,7 +137,7 @@ static void applyBrightness() {
 static WebServer g_web(80);
 
 static void handleRoot() {
-    const int th = radar::theme();
+    const int th = feedback_view::theme();
     const int ranges[] = {10, 15, 25, 30, 50, 100, 150, 250};
     // The value submitted stays in km (the device works in km); only the label is shown in
     // the user's chosen distance unit so the config page matches the screen.
@@ -397,7 +249,7 @@ static void handleRoot() {
     snprintf(buf, BUFSZ,
         "<!DOCTYPE html><html><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        "<title>Capsule Radar</title>"
+        "<title>Feedback Kiosk</title>"
         "<link rel=stylesheet href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'>"
         "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
         "<style>"
@@ -424,7 +276,7 @@ static void handleRoot() {
         ".sec{background:#0c1a12!important;color:#1dff86!important;border:1px solid #2a4a39!important}"
         "#map{height:220px;border-radius:10px;margin:6px 0 8px;border:1px solid #2a4a39;z-index:0}"
         "</style></head><body>"
-        "<div class=hd><div class=dot></div><div><h1>Capsule Radar</h1><p class=sub>Live ADS-B radar &middot; configuration</p></div></div>"
+        "<div class=hd><div class=dot></div><div><h1>Feedback Kiosk</h1><p class=sub>Customer feedback terminal &middot; configuration</p></div></div>"
         "<div class=card><div class=t>Location &amp; range</div><form method=POST action=/save>"
         "<label>Center point &mdash; tap the map or drag the pin</label>"
         "<div id=map></div>"
@@ -458,7 +310,7 @@ static void handleRoot() {
         "<div class=card><div class=t>Network</div>"
         "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>Forget the saved WiFi and reopen the setup portal.</p>"
         "<form method=POST action=/wifi><button class=w>Reset WiFi</button></form></div>"
-        "<p class=ft>Reach me at <code>capsuleradar.local</code> &middot; <a href=/update style='color:#9affc8'>Firmware update</a> &middot; v" FW_VERSION "</p>"
+        "<p class=ft>Reach me at <code>feedback.local</code> &middot; <a href=/update style='color:#9affc8'>Firmware update</a> &middot; v" FW_VERSION "</p>"
         "<script>"
         "var C=[%.5f,%.5f];var MAP=L.map('map').setView(C,10);"
         "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'(c) OpenStreetMap'}).addTo(MAP);"
@@ -531,7 +383,7 @@ static void handleSave() {
 static void handleWifi() {
     g_web.send(200, "text/html",
         "<body style='background:#06100a;color:#ffb23c;font-family:sans-serif;padding:24px'>"
-        "WiFi reset. Connect to the <b>CapsuleRadar-Setup</b> network to reconfigure.</body>");
+        "WiFi reset. Connect to the <b>Feedback-Setup</b> network to reconfigure.</body>");
     delay(400);                     // let the response reach the browser
     // The driver stores the saved AP in its own NVS namespace ("nvs.net80211"). On Arduino
     // core 3.x both wm.resetSettings() and WiFi.disconnect(true,true) can silently no-op
@@ -611,9 +463,6 @@ static void handleIdle() {   // idle auto-dim timeout (seconds; 0 = never)
 static void handleUnits() {   // measurement units preset (live re-render)
     if (g_web.hasArg("v")) {
         g_units = constrain((int)g_web.arg("v").toInt(), 0, 2);
-        ui_set_units(g_units);
-        ui_set_range_km(g_settings.rangeKm);   // refresh the zoom-button label
-        ui_on_data_updated();                  // re-render card/list/stats in the new units
         if (g_web.hasArg("save")) {
             Preferences p;
             p.begin("capsuleradar", false);
@@ -627,7 +476,7 @@ static void handleUnits() {   // measurement units preset (live re-render)
 static void handleSweep() {   // show/hide the rotating sweep line (live)
     if (g_web.hasArg("v")) {
         g_showSweep = g_web.arg("v").toInt() != 0;
-        radar::setSweepEnabled(g_showSweep);          // loop()/core 1: safe to touch LVGL
+        feedback_view::setSweepEnabled(g_showSweep);  // no-op stub (radar-era knob)
         if (g_web.hasArg("save")) {
             Preferences p;
             p.begin("capsuleradar", false);
@@ -641,7 +490,7 @@ static void handleSweep() {   // show/hide the rotating sweep line (live)
 static void handleTrail() {   // aircraft trail length 0/1/2/3 (live)
     if (g_web.hasArg("v")) {
         g_trailLen = constrain((int)g_web.arg("v").toInt(), 0, 3);
-        radar::setTrailLength(g_trailLen);
+        feedback_view::setTrailLength(g_trailLen);
         if (g_web.hasArg("save")) {
             Preferences p;
             p.begin("capsuleradar", false);
@@ -655,7 +504,6 @@ static void handleTrail() {   // aircraft trail length 0/1/2/3 (live)
 static void handleAltMin() {   // minimum-altitude feed filter, ft (applies from the next poll)
     if (g_web.hasArg("v")) {
         g_minAltFt = constrain((int)g_web.arg("v").toInt(), 0, 60000);
-        g_adsb.setMinAltFt((float)g_minAltFt);
         if (g_web.hasArg("save")) {
             Preferences p;
             p.begin("capsuleradar", false);
@@ -669,7 +517,6 @@ static void handleAltMin() {   // minimum-altitude feed filter, ft (applies from
 static void handleMilOnly() {   // military-only feed filter (applies from the next poll)
     if (g_web.hasArg("v")) {
         g_milOnly = g_web.arg("v").toInt() != 0;
-        g_adsb.setMilitaryOnly(g_milOnly);
         if (g_web.hasArg("save")) {
             Preferences p;
             p.begin("capsuleradar", false);
@@ -683,7 +530,7 @@ static void handleMilOnly() {   // military-only feed filter (applies from the n
 static void handleMaxAc() {   // max aircraft drawn on the scope (live)
     if (g_web.hasArg("v")) {
         g_maxAc = constrain((int)g_web.arg("v").toInt(), 1, ADSB_MAX_AIRCRAFT);
-        radar::setMaxOnScreen(g_maxAc);
+        feedback_view::setMaxOnScreen(g_maxAc);
         if (g_web.hasArg("save")) {
             Preferences p;
             p.begin("capsuleradar", false);
@@ -697,7 +544,7 @@ static void handleMaxAc() {   // max aircraft drawn on the scope (live)
 static void handleAirports() {   // show/hide airport markers (live)
     if (g_web.hasArg("v")) {
         g_showAirports = g_web.arg("v").toInt() != 0;
-        radar::setAirportsEnabled(g_showAirports);
+        feedback_view::setAirportsEnabled(g_showAirports);
         if (g_web.hasArg("save")) {
             Preferences p;
             p.begin("capsuleradar", false);
@@ -711,7 +558,6 @@ static void handleAirports() {   // show/hide airport markers (live)
 static void handleGround() {   // hide/show on-ground aircraft (applies from the next feed poll)
     if (g_web.hasArg("v")) {
         g_hideGround = g_web.arg("v").toInt() != 0;
-        g_adsb.setHideGround(g_hideGround);
         if (g_web.hasArg("save")) {
             Preferences p;
             p.begin("capsuleradar", false);
@@ -754,7 +600,7 @@ static void handleUpdatePage() {
     g_web.send(200, "text/html",
         "<!DOCTYPE html><html><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        "<title>Capsule Radar - Update</title><style>"
+        "<title>Feedback Kiosk - Update</title><style>"
         "body{background:radial-gradient(circle at 50% -10%,#0a1f15,#04100a 70%);color:#cdd6d1;"
         "font-family:system-ui,sans-serif;margin:0 auto;padding:20px;max-width:480px;min-height:100vh}"
         "h1{color:#1dff86;font-size:20px}.card{background:rgba(10,20,14,.85);border:1px solid #1f3a2b;border-radius:14px;padding:16px}"
@@ -818,7 +664,7 @@ void setup() {
     {
         Preferences p;
         p.begin("capsuleradar", true);
-        const int t = p.getInt("theme", THEME_PHOSPHOR);
+        const int t = p.getInt("theme", FEEDBACK_THEME_PHOSPHOR);
         g_showSweep = p.getBool("sweep", true);
         g_showAirports = p.getBool("airports", true);
         g_hideGround = p.getBool("hideground", false);
@@ -826,20 +672,14 @@ void setup() {
         g_milOnly = p.getBool("milonly", false);
         g_rotation = p.getInt("rot", 0);
         p.end();
-        radar::setTheme(t);
-        radar::setSweepEnabled(g_showSweep);
-        radar::setAirportsEnabled(g_showAirports);
-        g_adsb.setHideGround(g_hideGround);
-        g_adsb.setMinAltFt((float)g_minAltFt);
-        g_adsb.setMilitaryOnly(g_milOnly);
-        radar::setTrailLength(g_trailLen);
-        radar::setMaxOnScreen(g_maxAc);
+        feedback_view::setTheme(t);
+        feedback_view::setSweepEnabled(g_showSweep);
+        feedback_view::setAirportsEnabled(g_showAirports);
+        feedback_view::setTrailLength(g_trailLen);
+        feedback_view::setMaxOnScreen(g_maxAc);
         display::setRotation((uint8_t)g_rotation);
     }
-    radar::setThemeChangedCb(saveTheme);
-    ui_set_range_cb(onRangeChange);              // on-screen zoom button
-    ui_set_units(g_units);                       // apply saved unit preset
-    ui_set_range_km(g_settings.rangeKm);         // show the loaded range
+    feedback_view::setThemeChangedCb(saveTheme);
 
     imu_begin();       // face-down sleep (no-op if the IMU isn't detected)
     battery_begin();   // AXP2101 (no-op if not detected / no battery)
@@ -861,7 +701,7 @@ void setup() {
     // First boot opens the "CapsuleRadar-Setup" AP to enter WiFi creds. Non-blocking
     // so the radar keeps animating while you configure WiFi from your phone.
     g_wm.setConfigPortalBlocking(false);
-    g_wm.setTitle("Capsule Radar");
+    g_wm.setTitle("Feedback Kiosk");
     // light phosphor-green theme for the captive portal (small CSS, injected into <head>)
     g_wm.setCustomHeadElement(
         "<style>"
@@ -880,21 +720,15 @@ void setup() {
         Serial.println("[wifi] new credentials saved -> rebooting for a clean web/mDNS start");
         g_rebootAtMs = millis() + 2500;   // let the portal deliver its 'saved' page first
     });
-    if (g_wm.autoConnect("CapsuleRadar-Setup"))
+    if (g_wm.autoConnect("Feedback-Setup"))
         Serial.println("[wifi] connected");
     else
-        Serial.println("[wifi] config portal open - join 'CapsuleRadar-Setup' to set WiFi; UI stays live");
+        Serial.println("[wifi] config portal open - join 'Feedback-Setup' to set WiFi; UI stays live");
 
     // --- OTA ---------------------------------------------------------------
     // ArduinoOTA is started from loop() once WiFi connects (see otaUp there).
 
-    // --- ADS-B client + task ----------------------------------------------
-    float queryKm = g_settings.rangeKm * 1.6f;          // query wider than the display range
-    if (queryKm < 50.0f)  queryKm = 50.0f;
-    if (queryKm > 200.0f) queryKm = 200.0f;
-    g_adsb.begin(g_settings.homeLat, g_settings.homeLon, queryKm);
-    g_ac_mutex = xSemaphoreCreateMutex();
-    xTaskCreatePinnedToCore(adsb_task, "adsb", 16384, nullptr, 1, nullptr, 0);  // TLS needs a big stack
+    // --- (no application task; the feedback terminal is fully on-device) ---
 
     // configuration web page (http://capsuleradar.local/)
     g_web.on("/", handleRoot);
@@ -932,7 +766,6 @@ void loop() {
     display::loop();                // drive LVGL (render dirty areas + run timers)
     g_wm.process();                 // service the WiFi config portal (non-blocking)
     g_web.handleClient();           // serve the configuration web page
-    if (g_useGps) gps_poll();       // pull NMEA from the LC76G (only when GPS auto-location is on)
 
     // scheduled reboot after a fresh WiFi config (see setSaveConfigCallback)
     if (g_rebootAtMs && (int32_t)(millis() - g_rebootAtMs) >= 0) { delay(50); ESP.restart(); }
@@ -940,7 +773,7 @@ void loop() {
     // OTA: set up once WiFi is up, then service it every loop (flash over the air)
     static bool otaUp = false;
     if (!otaUp && WiFi.status() == WL_CONNECTED) {
-        ArduinoOTA.setHostname("capsuleradar");        // -> capsuleradar.local (registers mDNS)
+        ArduinoOTA.setHostname("feedback");            // -> feedback.local (registers mDNS)
         ArduinoOTA.begin();
         MDNS.addService("http", "tcp", 80);            // advertise the config web page
         otaUp = true;
@@ -948,17 +781,6 @@ void loop() {
     }
     if (otaUp) ArduinoOTA.handle();
 
-    // Push a fresh ADS-B snapshot to the radar (copy under the mutex, render outside).
-    if (g_acDirty) {
-        if (xSemaphoreTake(g_ac_mutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-            g_snap.swap(g_aircraft);   // O(1) handoff under the lock; render on g_snap outside it.
-            g_acDirty = false;         // g_aircraft now holds the previous snapshot (overwritten next poll)
-            xSemaphoreGive(g_ac_mutex);
-            radar::update(g_snap, g_settings); // rebuild the glyph/trail layer
-            ui_on_data_updated();              // refresh card/list/stats
-            checkAudioEvents();                // ping new-in-range / emergency / military
-        }
-    }
 
     // periodic: HUD clock + wifi/battery indicators
     static uint32_t lastStatus = 0;
@@ -986,42 +808,22 @@ void loop() {
         }
         const bool wifiUp = (WiFi.status() == WL_CONNECTED);
         const int  rssi   = wifiUp ? (int)WiFi.RSSI() : -127;
-        // "fresh" = we got aircraft data recently. Catches a stalled feed (weak WiFi dropping
-        // polls intermittently) that never trips the consecutive-fail counter -> aircraft
-        // freeze but the icon would otherwise stay white.
-        const bool feedFresh = wifiUp && (millis() - g_lastFeedOkMs < 18000UL);
-        ui_set_status(wifiUp, feedFresh, rssi, clk);
+        ui_set_status(wifiUp, wifiUp, rssi, clk);
         char net[80];
         if (WiFi.status() == WL_CONNECTED)
-            snprintf(net, sizeof(net), "Configure at\ncapsuleradar.local\n%s", WiFi.localIP().toString().c_str());
+            snprintf(net, sizeof(net), "Configure at\nfeedback.local\n%s", WiFi.localIP().toString().c_str());
         else
-            snprintf(net, sizeof(net), "WiFi setup:\njoin CapsuleRadar-Setup");
+            snprintf(net, sizeof(net), "WiFi setup:\njoin Feedback-Setup");
         ui_set_netinfo(net);
         const bool bpresent = battery_present();
         ui_set_battery(battery_percent(), battery_charging(), bpresent);
         g_onBattery = bpresent && !battery_charging();
-        // GPS HUD/Stats: 0 = off/no module (hidden), 1 = acquiring, 2 = fix
-        const int gpsState = (!g_useGps || !gps_present()) ? 0 : (gps_has_fix() ? 2 : 1);
-        ui_set_gps(gpsState, gps_satellites());
         // once NTP has a real fix, persist it to the RTC (core 1 only)
         if (!g_rtcSynced && time(nullptr) > 1700000000L) {
             time_t now = time(nullptr);
             struct tm utc;
             gmtime_r(&now, &utc);
             if (rtc_write(&utc)) { g_rtcSynced = true; Serial.println("[rtc] saved NTP time"); }
-        }
-        // GPS auto-location (-G variant): re-centre the radar when the fix moves enough.
-        if (g_useGps) {
-            double glat, glon;
-            if (gps_location(&glat, &glon) &&
-                geo::haversineKm(g_settings.homeLat, g_settings.homeLon, glat, glon) > 1.0) {
-                g_settings.homeLat = glat; g_settings.homeLon = glon;   // radar/coastline recenter
-                // re-query the new area — set the radius too (same formula as boot/zoom), or
-                // adsb_task would re-begin with a stale/zero g_requeryKm and fetch 0 aircraft.
-                g_requeryKm = constrain(g_settings.rangeKm * 1.6f, 50.0f, 200.0f);
-                g_requery = true;                                       // adsb_task re-queries the new area
-                Serial.printf("[gps] re-centred to %.4f, %.4f\n", glat, glon);
-            }
         }
     }
 
