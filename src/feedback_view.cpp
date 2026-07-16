@@ -10,7 +10,6 @@
 
 #include "feedback_view.h"
 #include "config.h"
-#include "feedback_log.h"        // record() on every tap; flush() on QR state change
 
 // Audio path. The native SDL simulator doesn't link audio.cpp, so guard
 // the include + the call. On real hardware, AUDIO_NEW is a soft single
@@ -135,7 +134,6 @@ static void t_thanks_cb(lv_timer_t *) {
     // Dashboard mode: skip QR entirely. After the THANK-YOU pulse we go
     // straight back to IDLE through the normal cooldown arc.
     if (s.mode == 1 /* DASHBOARD */) {
-        feedback_log::flush();                   // still persist now -- it's a state transition
         goto_idle_with_cooldown();
         return;
     }
@@ -146,14 +144,17 @@ static void t_thanks_cb(lv_timer_t *) {
     // arm the QR -> IDLE one-shot
     s.t_qr = lv_timer_create(t_qr_cb, FEEDBACK_QR_MS, nullptr);
     lv_timer_set_repeat_count(s.t_qr, 1);
-    feedback_log::flush();           // state change to QR -> persist now (bypass throttle)
 }
 
 // IDLE -> THANKS
 static void goto_thanks(FeedbackAnswer a) {
     if (s.st != ST_IDLE) return;                   // defensive
     s.lastAnswer = a;
-    feedback_log::record((uint8_t)(a - FEEDBACK_GOOD));   // 1/2/3 -> 0/1/2 for the log
+    {
+        const char *lbl = (a == FEEDBACK_GOOD) ? "GOOD" :
+                          (a == FEEDBACK_NEUTRAL) ? "NEUTRAL" : "BAD";
+        FB_LOG("[fb] %s tap recorded (event log deferred)\n", lbl);
+    }
     s.st = ST_THANKS;
     lv_obj_add_flag(s.v_idle, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s.v_thanks, LV_OBJ_FLAG_HIDDEN);
