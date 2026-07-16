@@ -76,6 +76,16 @@ struct S {
     lv_obj_t      *v_qr_bad  = nullptr;
     lv_obj_t      *arc_cd    = nullptr;
 
+    // live-tunable (pushed by feedback_log::applySettings)
+    int            mode       = 0;          // 0=REVIEW, 1=DASHBOARD
+    int            cooldownMs = FEEDBACK_COOLDOWN_MS;
+
+    // question label + QR widget handles for live updates
+    lv_obj_t      *lbl_question = nullptr;
+    lv_obj_t      *qr_review    = nullptr;   // FEEDBACK_URL_REVIEW  widget in v_qr_good
+    lv_obj_t      *qr_internal  = nullptr;   // FEEDBACK_URL_INTERNAL in v_qr_bad
+    lv_obj_t      *qr_review2   = nullptr;   // secondary "Or leave a public review" widget
+
     lv_timer_t    *t_thanks  = nullptr;
     lv_timer_t    *t_qr      = nullptr;
     lv_anim_t      a_cd;
@@ -96,7 +106,7 @@ static void start_cd_anim(void) {
     lv_anim_set_var(&s.a_cd, s.arc_cd);
     lv_anim_set_exec_cb(&s.a_cd, arc_cd_exec);
     lv_anim_set_values(&s.a_cd, 0, 360);
-    lv_anim_set_time(&s.a_cd, FEEDBACK_COOLDOWN_MS);
+    lv_anim_set_time(&s.a_cd, s.cooldownMs);     // live-tunable
     lv_anim_set_path_cb(&s.a_cd, lv_anim_path_linear);
     lv_anim_set_ready_cb(&s.a_cd, arc_cd_ready);
     lv_anim_start(&s.a_cd);
@@ -120,8 +130,17 @@ static void goto_idle_with_cooldown(void) {
 static void t_qr_cb(lv_timer_t *) { goto_idle_with_cooldown(); }
 
 static void t_thanks_cb(lv_timer_t *) {
-    s.st = (s.lastAnswer == FEEDBACK_GOOD) ? ST_QR_GOOD : ST_QR_BAD;
     lv_obj_add_flag(s.v_thanks, LV_OBJ_FLAG_HIDDEN);
+
+    // Dashboard mode: skip QR entirely. After the THANK-YOU pulse we go
+    // straight back to IDLE through the normal cooldown arc.
+    if (s.mode == 1 /* DASHBOARD */) {
+        feedback_log::flush();                   // still persist now -- it's a state transition
+        goto_idle_with_cooldown();
+        return;
+    }
+
+    s.st = (s.lastAnswer == FEEDBACK_GOOD) ? ST_QR_GOOD : ST_QR_BAD;
     if (s.st == ST_QR_GOOD) lv_obj_clear_flag(s.v_qr_good, LV_OBJ_FLAG_HIDDEN);
     else                    lv_obj_clear_flag(s.v_qr_bad,  LV_OBJ_FLAG_HIDDEN);
     // arm the QR -> IDLE one-shot
@@ -279,6 +298,7 @@ void init(void *lv_parent) {
     lv_obj_set_width(q, 360);
     lv_obj_set_style_text_align(q, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(q, LV_ALIGN_TOP_MID, 0, 110);
+    s.lbl_question = q;                         // live-updatable from feedback_log::applySettings()
 
     // 3 smileys, evenly spaced horizontally
     static const lv_color_t cols[3] = {
@@ -341,6 +361,7 @@ void init(void *lv_parent) {
 
         lv_obj_t *card = make_qr_card(s.v_qr_good, 140, FEEDBACK_URL_REVIEW);
         lv_obj_align(card, LV_ALIGN_CENTER, 0, 20);
+        s.qr_review = lv_obj_get_child(card, 0);          // the QR widget is the only child of the card
 
         lv_obj_t *url = lv_label_create(s.v_qr_good);
         lv_label_set_text(url, FEEDBACK_URL_REVIEW);
@@ -378,6 +399,7 @@ void init(void *lv_parent) {
 
         lv_obj_t *card1 = make_qr_card(s.v_qr_bad, 110, FEEDBACK_URL_INTERNAL);
         lv_obj_align(card1, LV_ALIGN_CENTER, 0, -50);
+        s.qr_internal = lv_obj_get_child(card1, 0);
 
         lv_obj_t *url1 = lv_label_create(s.v_qr_bad);
         lv_label_set_text(url1, FEEDBACK_URL_INTERNAL);
@@ -394,6 +416,7 @@ void init(void *lv_parent) {
 
         lv_obj_t *card2 = make_qr_card(s.v_qr_bad, 60, FEEDBACK_URL_REVIEW);
         lv_obj_align(card2, LV_ALIGN_CENTER, 0, 110);
+        s.qr_review2 = lv_obj_get_child(card2, 0);
 
         lv_obj_t *url2 = lv_label_create(s.v_qr_bad);
         lv_label_set_text(url2, FEEDBACK_URL_REVIEW);
@@ -435,5 +458,35 @@ void init(void *lv_parent) {
 }
 
 void update(void) {}
+
+// -----------------------------------------------------------------------------
+// Live operator setters (feedback_log::applySettings + web handlers)
+// -----------------------------------------------------------------------------
+void setMode(int mode) { s.mode = (mode == 1) ? 1 : 0; }
+
+void setCooldownMs(int ms) {
+    s.cooldownMs = (ms < 2000) ? 2000 : (ms > 30000 ? 30000 : ms);
+}
+
+void setQuestion(const char *text) {
+    if (!text || !s.lbl_question) return;
+    lv_label_set_text(s.lbl_question, text);
+}
+
+void setUrlReview(const char *url) {
+    if (!url || !s.qr_review) return;
+    lv_qrcode_update(s.qr_review, url, strlen(url));
+    lv_obj_invalidate(s.qr_review);
+    if (s.qr_review2) {                                       // secondary "public review" widget
+        lv_qrcode_update(s.qr_review2, url, strlen(url));
+        lv_obj_invalidate(s.qr_review2);
+    }
+}
+
+void setUrlInternal(const char *url) {
+    if (!url || !s.qr_internal) return;
+    lv_qrcode_update(s.qr_internal, url, strlen(url));
+    lv_obj_invalidate(s.qr_internal);
+}
 
 } // namespace feedback_view

@@ -6,6 +6,7 @@
 
 #include "feedback_log.h"
 #include "config.h"
+#include "feedback_view.h"            // applySettings() pushes through view setters
 
 #include <stdio.h>
 #include <string.h>
@@ -262,6 +263,102 @@ void record(uint8_t answer) {
     s_flushPending = true;
     FB_LOG("[fb] %s @ %lu (ring %d/%d)\n",
            ans_label[answer], (unsigned long)ts, (int)s_ringCount, RING_N);
+}
+
+// =========================================================================
+// Operator settings (NVS namespace "kiosk")
+// =========================================================================
+static void cpy(char *dst, size_t cap, const String &src) {
+    if (!dst || cap == 0) return;
+    const int n = src.length();
+    const int m = (n < (int)cap - 1) ? n : (int)cap - 1;
+    memcpy(dst, src.c_str(), m);
+    dst[m] = 0;
+}
+
+void loadSettings(Settings &out) {
+#if defined(ESP_PLATFORM)
+    Preferences p;
+    p.begin("kiosk", true);
+    out.mode        = p.getUChar ("mode",     FEEDBACK_DEFAULT_MODE);
+    out.cooldownMs  = p.getUShort("cooldown", FEEDBACK_DEFAULT_COOLDOWN);
+    cpy(out.question,    sizeof(out.question),    p.getString("q",       FEEDBACK_QUESTION_DEF));
+    cpy(out.urlReview,   sizeof(out.urlReview),   p.getString("urlrev",  FEEDBACK_URL_REVIEW_DEF));
+    cpy(out.urlInternal, sizeof(out.urlInternal), p.getString("urlin",   FEEDBACK_URL_INTERNAL_DEF));
+    cpy(out.webhookUrl,  sizeof(out.webhookUrl),  p.getString("webhook", FEEDBACK_WEBHOOK_DEF));
+    p.end();
+#else
+    out.mode        = FEEDBACK_DEFAULT_MODE;
+    out.cooldownMs  = FEEDBACK_DEFAULT_COOLDOWN;
+    snprintf(out.question,    sizeof(out.question),    "%s", FEEDBACK_QUESTION_DEF);
+    snprintf(out.urlReview,   sizeof(out.urlReview),   "%s", FEEDBACK_URL_REVIEW_DEF);
+    snprintf(out.urlInternal, sizeof(out.urlInternal), "%s", FEEDBACK_URL_INTERNAL_DEF);
+    snprintf(out.webhookUrl,  sizeof(out.webhookUrl),  "%s", FEEDBACK_WEBHOOK_DEF);
+#endif
+}
+
+void saveSettings(const Settings &s) {
+#if defined(ESP_PLATFORM)
+    Preferences p;
+    p.begin("kiosk", false);
+    p.putUChar ("mode",     s.mode);
+    p.putUShort("cooldown", s.cooldownMs);
+    p.putString("q",       s.question);
+    p.putString("urlrev",  s.urlReview);
+    p.putString("urlin",   s.urlInternal);
+    p.putString("webhook", s.webhookUrl);
+    p.end();
+#else
+    (void)s;   // sim: settings live for the process only
+#endif
+}
+
+void applySettings(const Settings &s) {
+    // clamp before pushing so a stray /save?cooldown=99999 can't break the cadence
+    const uint16_t cd = (s.cooldownMs < 2000) ? 2000 : (s.cooldownMs > 30000 ? 30000 : s.cooldownMs);
+    const uint8_t  md = (s.mode > 1) ? FEEDBACK_DEFAULT_MODE : s.mode;
+
+    feedback_view::setMode       ((int)md);
+    feedback_view::setQuestion   (s.question);
+    feedback_view::setUrlReview  (s.urlReview);
+    feedback_view::setUrlInternal(s.urlInternal);
+    feedback_view::setCooldownMs ((int)cd);
+    setWebhookUrl                (s.webhookUrl);
+}
+
+void buildHeatGrid(HeatGrid &out) {
+    memset(&out, 0, sizeof(out));
+    Event ev[500];
+    const int n = recentCopy(ev, 500);
+    for (int i = 0; i < n; ++i) {
+        time_t t = (time_t)ev[i].ts;
+        struct tm g; gmtime_r(&t, &g);
+        const int wd = (g.tm_wday < 0 || g.tm_wday > 6) ? 0 : g.tm_wday;
+        const int hr = g.tm_hour;
+        const int dp = (hr >= 6 && hr < 12) ? 0
+                  : (hr >= 12 && hr < 18) ? 1
+                  : 2;                                                  // evening 18-24 wraps to 2 too
+        out.cell[wd][dp].total++;
+        if (ev[i].answer == 0) out.cell[wd][dp].good++;
+    }
+}
+
+void build31DaySeries(DaySeries &out) {
+    memset(&out, 0, sizeof(out));
+    out.count = 0;
+    // day(day_back) is 0=today, 1=yesterday, ...; we want oldest-first.
+    for (int back = (int)FEEDBACK_DAYS_N - 1; back >= 0; --back) {
+        const DayCount d = day(back);
+        const int slot = out.count;
+        if (slot >= (int)FEEDBACK_DAYS_N) break;
+        out.year  [slot] = d.year;
+        out.mon   [slot] = d.mon;
+        out.day   [slot] = d.day;
+        out.good  [slot] = d.good;
+        out.neutral[slot] = d.neutral;
+        out.bad   [slot] = d.bad;
+        out.count++;
+    }
 }
 
 } // namespace feedback_log

@@ -55,6 +55,17 @@ static const float RANGE_STEPS_KM[] = {10.0f, 20.0f, 30.0f, 50.0f, 100.0f};
 #define FEEDBACK_WEBHOOK_URL      ""          // placeholder; web UI configures later
 #define FEEDBACK_FLUSH_INTERVAL_S 30          // NVS daily-counter write throttle (also flushed on QR transition)
 
+// ---------- Kiosk operator settings (NVS namespace "kiosk") ----------
+// Mode: 0 = REVIEW (kapper: show QR for GOOD / internal + review for NEUTRAL+BAD),
+//       1 = DASHBOARD (wachtkamer: after THANKS go straight back to IDLE; never show any QR).
+#define FEEDBACK_DEFAULT_MODE     0
+#define FEEDBACK_DEFAULT_COOLDOWN 4000        // ms (overridable via /save in range 2..30 s)
+#define FEEDBACK_QUESTION_DEF     "Hoe was uw bezoek?"
+#define FEEDBACK_URL_REVIEW_DEF   "https://g.page/r/PLACEHOLDER-REVIEW"
+#define FEEDBACK_URL_INTERNAL_DEF "https://feedback.local/form"
+#define FEEDBACK_WEBHOOK_DEF      ""
+#define FEEDBACK_MAX_QUESTION     60          // max chars for the question text
+
 // ---------- Debug ----------
 #define DEBUG_MEM           0               // 1 = print a [mem] heap/fps line every 5s on serial
 

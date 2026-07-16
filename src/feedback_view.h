@@ -59,4 +59,13 @@ bool airportsEnabled();
 void setTrailLength(int level);
 void setMaxOnScreen(int n);
 
+// Live operator setters (called from feedback_log::applySettings() and the
+// web config handlers). All safe to call from any state; they take effect
+// the next time that surface is shown.
+void setMode(int mode);                  // 0 = REVIEW, 1 = DASHBOARD (no QR)
+void setQuestion(const char *text);      // update the IDLE label
+void setUrlReview(const char *url);      // re-render the GOOD QR widget
+void setUrlInternal(const char *url);    // re-render the NEUTRAL/BAD QR widget
+void setCooldownMs(int ms);              // applied to the next cooldown animation
+
 } // namespace feedback_view

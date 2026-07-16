@@ -6,6 +6,7 @@
 #include "geo.h"                     // GPS distance check (haversine)
 #include "feedback_view.h"           // placeholder main canvas (was radar_view)
 #include "feedback_log.h"            // anonymous event log (ring + NVS counters + CSV + webhook)
+#include "stats_html.h"              // /stats + /api/stats renderers
 #include "ui.h"
 #include "display.h"                  // M0: CO5300 + LVGL bring-up
 #include "imu_qmi8658.h"             // face-down sleep
@@ -138,131 +139,31 @@ static void applyBrightness() {
 static WebServer g_web(80);
 
 static void handleRoot() {
-    const int th = feedback_view::theme();
-    const int ranges[] = {10, 15, 25, 30, 50, 100, 150, 250};
-    // The value submitted stays in km (the device works in km); only the label is shown in
-    // the user's chosen distance unit so the config page matches the screen.
-    const float    ufac  = (g_units == 0) ? 0.539957f : (g_units == 2 ? 0.621371f : 1.0f);
-    const char    *uname = (g_units == 0) ? "nm" : (g_units == 2 ? "mi" : "km");
-    String ropts;
-    for (int r : ranges) {
-        char o[72];
-        snprintf(o, sizeof(o), "<option value=%d%s>%.0f %s</option>",
-                 r, (r == (int)(g_settings.rangeKm + 0.5f)) ? " selected" : "", r * ufac, uname);
-        ropts += o;
-    }
-    const char *tnames[] = {"Phosphor", "Orb", "Amber CRT", "Military"};
-    String topts;
-    for (int i = 0; i < 4; ++i) {
-        char o[80];
-        snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", i, i == th ? " selected" : "", tnames[i]);
-        topts += o;
-    }
-    const int idleSecs[] = {10, 20, 30, 60, 120, 300, 1800, 3600, 7200, 14400, 28800};
-    const int curIdle = (int)(g_idleDimMs / 1000);
-    String iopts;
-    for (int sV : idleSecs) {
-        char lbl[16];
-        if      (sV < 60)   snprintf(lbl, sizeof(lbl), "%d s", sV);
-        else if (sV < 3600) snprintf(lbl, sizeof(lbl), "%d min", sV / 60);
-        else                snprintf(lbl, sizeof(lbl), "%d h", sV / 3600);
-        char o[96];
-        snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", sV, sV == curIdle ? " selected" : "", lbl);
-        iopts += o;
-    }
-    { char o[64]; snprintf(o, sizeof(o), "<option value=0%s>Never</option>", curIdle == 0 ? " selected" : ""); iopts += o; }
-    const char *unames[] = {"Aviation (ft, kt, nm)", "Metric (m, km/h, km)", "Imperial (ft, mph, mi)"};
-    String uopts;
-    for (int i = 0; i < 3; ++i) {
-        char o[96];
-        snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", i, i == g_units ? " selected" : "", unames[i]);
-        uopts += o;
-    }
-    const char *rnames[] = {"0\xc2\xb0 (default)", "90\xc2\xb0", "180\xc2\xb0", "270\xc2\xb0"};
-    String rotopts;
-    for (int i = 0; i < 4; ++i) {
-        char o[64];
-        snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", i, i == g_rotation ? " selected" : "", rnames[i]);
-        rotopts += o;
-    }
-    const char *tlnames[] = {"Off", "Short", "Medium", "Long"};
-    String tlopts;
-    for (int i = 0; i < 4; ++i) {
-        char o[64];
-        snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", i, i == g_trailLen ? " selected" : "", tlnames[i]);
-        tlopts += o;
-    }
-    const int mxvals[] = {10, 15, 20, 30, 40, 60};   // max aircraft on the scope (<= feed cap)
-    String mxopts;
-    for (int mv : mxvals) {
-        char o[64];
-        snprintf(o, sizeof(o), "<option value=%d%s>%d</option>", mv, mv == g_maxAc ? " selected" : "", mv);
-        mxopts += o;
-    }
-    // minimum-altitude filter options (stored in ft; labels show ft + km for clarity)
-    const struct { int ft; const char *lbl; } mavals[] = {
-        {0, "Off"}, {5000, "&gt; 5,000 ft (1.5 km)"}, {10000, "&gt; 10,000 ft (3 km)"},
-        {20000, "&gt; 20,000 ft (6 km)"}, {33000, "&gt; 33,000 ft (10 km)"},
-    };
-    String maopts;
-    for (auto &mv : mavals) {
-        char o[96];
-        snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", mv.ft, mv.ft == g_minAltFt ? " selected" : "", mv.lbl);
-        maopts += o;
-    }
-    const char *anames[] = {"Off", "Emergencies only", "New aircraft + emergencies"};
-    String aopts;
-    for (int i = 0; i < 3; ++i) {
-        char o[80];
-        snprintf(o, sizeof(o), "<option value=%d%s>%s</option>", i, i == g_alertMode ? " selected" : "", anames[i]);
-        aopts += o;
-    }
-    const int proxUnit[] = {0, 2, 5, 10, 25};   // 0 = off; rest in the user's distance unit
-    String popts;
-    for (int pv : proxUnit) {
-        const float pkm = (pv == 0) ? 0.0f : (pv / ufac);   // user unit -> km (value submitted)
-        const bool  sel = (pv == 0) ? (g_proximityKm <= 0.0f) : (fabsf(g_proximityKm - pkm) < 0.4f);
-        char lbl[24];
-        if (pv == 0) snprintf(lbl, sizeof(lbl), "Off");
-        else         snprintf(lbl, sizeof(lbl), "%d %s", pv, uname);
-        char o[80];
-        snprintf(o, sizeof(o), "<option value=%.3f%s>%s</option>", pkm, sel ? " selected" : "", lbl);
-        popts += o;
-    }
-    String tzopts;   // time-zone dropdown (value = index into TZOPTS; mapped to POSIX TZ on save)
-    for (int i = 0; i < TZOPTS_N; ++i) {
-        char o[128];
-        snprintf(o, sizeof(o), "<option value=%d data-off=%d data-dst=%d%s>%s</option>",
-                 i, TZOPTS[i].offMin, TZOPTS[i].dst, g_tz == TZOPTS[i].tz ? " selected" : "", TZOPTS[i].label);
-        tzopts += o;
-    }
-    String gpsRow;   // only on the -G variant: offer to auto-set the centre from GPS
-    if (gps_present()) {
-        gpsRow  = "<label><input type=checkbox class=ck ";
-        gpsRow += g_useGps ? "checked" : "";
-        gpsRow += " onchange='gp(this.checked)'>Use GPS for location</label>";
-        gpsRow += "<div style='font-size:12px;opacity:.6;margin:-2px 0 6px'>"
-                  "When on, the location above is used until the GPS gets a fix, then it takes over.</div>";
-    }
-    static const size_t BUFSZ = 10240;
-    static char *buf = (char *)ps_malloc(BUFSZ);   // PSRAM: keep this big page buffer off the scarce
-    if (!buf) return;                              //   internal heap (the contiguous RAM mbedTLS needs)
+    feedback_log::Settings st;
+    feedback_log::loadSettings(st);
+
+    char q[sizeof(st.question)], rev[sizeof(st.urlReview)], rin[sizeof(st.urlInternal)], whk[sizeof(st.webhookUrl)];
+    snprintf(q,   sizeof(q),   "%s", st.question);
+    snprintf(rev, sizeof(rev), "%s", st.urlReview);
+    snprintf(rin, sizeof(rin), "%s", st.urlInternal);
+    snprintf(whk, sizeof(whk), "%s", st.webhookUrl);
+    const int  cd_s = st.cooldownMs / 1000;
+
+    static const size_t BUFSZ = 8192;
+    static char *buf = (char *)ps_malloc(BUFSZ);   // PSRAM: keep this page off the scarce internal heap
+    if (!buf) return;
+
     snprintf(buf, BUFSZ,
         "<!DOCTYPE html><html><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        "<title>Feedback Kiosk</title>"
-        "<link rel=stylesheet href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'>"
-        "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
+        "<title>Feedback Kiosk - Configuration</title>"
         "<style>"
         "*{box-sizing:border-box}"
         "body{background:radial-gradient(circle at 50%% -10%%,#0a1f15,#04100a 70%%);color:#cdd6d1;"
-        "font-family:system-ui,-apple-system,sans-serif;margin:0 auto;padding:20px;max-width:480px;min-height:100vh}"
+        "font-family:system-ui,-apple-system,sans-serif;margin:0 auto;padding:20px;max-width:520px;min-height:100vh}"
         ".hd{display:flex;align-items:center;gap:12px;margin-bottom:16px}"
-        ".dot{width:44px;height:44px;border-radius:50%%;border:2px solid #1dff86;position:relative;"
-        "overflow:hidden;flex:0 0 auto;box-shadow:0 0 16px rgba(29,255,134,.4)}"
-        ".dot::before{content:'';position:absolute;inset:0;animation:sw 3s linear infinite;"
-        "background:conic-gradient(from 0deg,rgba(29,255,134,.65),transparent 55%%)}"
-        "@keyframes sw{to{transform:rotate(360deg)}}"
+        ".dot{width:44px;height:44px;border-radius:50%%;border:2px solid #1dff86;flex:0 0 auto;"
+        "box-shadow:0 0 16px rgba(29,255,134,.4)}"
         "h1{color:#1dff86;font-size:20px;margin:0}.sub{color:#6f8c7d;font-size:12px;margin:2px 0 0}"
         ".t{color:#1dff86;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;opacity:.85}"
         "label{display:block;margin:12px 0 4px;color:#9affc8;font-size:13px}"
@@ -271,114 +172,174 @@ static void handleRoot() {
         "input:focus,select:focus{outline:none;border-color:#1dff86;box-shadow:0 0 0 2px rgba(29,255,134,.18)}"
         "button{margin-top:16px;width:100%%;padding:12px;border:0;border-radius:8px;background:#1dff86;"
         "color:#04140b;font-weight:700;font-size:16px}button:active{opacity:.85}"
-        ".w{background:#ffb23c}.card{background:rgba(10,20,14,.85);border:1px solid #1f3a2b;border-radius:14px;padding:16px;margin-bottom:14px}"
-        ".ft{color:#5f7a6c;font-size:12px;text-align:center;margin-top:6px}.ft code{color:#9affc8}"
-        ".ck{width:auto;display:inline;margin-right:8px;vertical-align:middle}"
-        ".sec{background:#0c1a12!important;color:#1dff86!important;border:1px solid #2a4a39!important}"
-        "#map{height:220px;border-radius:10px;margin:6px 0 8px;border:1px solid #2a4a39;z-index:0}"
+        ".card{background:rgba(10,20,14,.85);border:1px solid #1f3a2b;border-radius:14px;padding:16px;margin-bottom:14px}"
+        ".ft{color:#5f7a6c;font-size:12px;text-align:center;margin-top:10px}.ft code{color:#9affc8}"
+        ".w{background:#ffb23c}"
         "</style></head><body>"
-        "<div class=hd><div class=dot></div><div><h1>Feedback Kiosk</h1><p class=sub>Customer feedback terminal &middot; configuration</p></div></div>"
-        "<div class=card><div class=t>Location &amp; range</div><form method=POST action=/save>"
-        "<label>Center point &mdash; tap the map or drag the pin</label>"
-        "<div id=map></div>"
-        "<label>Center latitude</label><input id=lat name=lat value='%.5f'>"
-        "<label>Center longitude</label><input id=lon name=lon value='%.5f'>"
-        "%s"
-        "<label>Display range</label><select name=range>%s</select>"
-        "<label>Theme</label><select name=theme>%s</select>"
-        "<label>Time zone</label><select name=tz>%s</select>"
-        "<button>Save &amp; restart</button></form></div>"
+        "<div class=hd><div class=dot></div><div><h1>Feedback Kiosk</h1>"
+        "<p class=sub>Customer feedback terminal &middot; configuration</p></div></div>"
+
+        // ----- Kiosk settings (persisted in NVS) -----
+        "<div class=card><div class=t>Feedback flow</div><form method=POST action=/save>"
+        "<label>Mode</label><select name=mode>"
+          "<option value=0%s>Review (kapper) &mdash; QR funnel to public review</option>"
+          "<option value=1%s>Dashboard (wachtkamer) &mdash; private only, no QR</option>"
+        "</select>"
+        "<label>Question shown on screen (max 60 chars)</label>"
+        "<input name=q maxlength=60 value='%s' required>"
+        "<label>Public review URL (Google Maps etc.)</label>"
+        "<input name=urlrev type=url value='%s'>"
+        "<label>Internal form URL</label>"
+        "<input name=urlin type=url value='%s'>"
+        "<label>Webhook URL (optional, JSON POST per tap)</label>"
+        "<input name=webhook type=url value='%s'>"
+        "<label>Cooldown between interactions: <span id='cds'>%d</span>&nbsp;s</label>"
+        "<input type=range min=2 max=30 step=1 value='%d' name=cooldown oninput='cds.innerText=this.value'>"
+        "<button>Save</button></form></div>"
+
+        // ----- Display / brightness (live, in-session) -----
         "<div class=card><div class=t>Display</div>"
         "<label>Brightness</label>"
         "<input type=range min=5 max=255 value='%d' oninput='b(this.value,0)' onchange='b(this.value,1)'>"
-        "<label>Dim screen after</label><select onchange='d(this.value)'>%s</select>"
-        "<label><input type=checkbox class=ck %s onchange='sw(this.checked)'>Show radar sweep</label>"
-        "<label><input type=checkbox class=ck %s onchange='ap(this.checked)'>Show airports</label>"
-        "<label><input type=checkbox class=ck %s onchange='hg(this.checked)'>Hide aircraft on the ground</label>"
-        "<label>Minimum altitude</label><select onchange='ma(this.value)'>%s</select>"
-        "<label><input type=checkbox class=ck %s onchange='mo(this.checked)'>Military aircraft only</label>"
-        "<label>Aircraft trails</label><select onchange='tl(this.value)'>%s</select>"
-        "<label>Max aircraft on screen</label><select onchange='mx(this.value)'>%s</select>"
-        "<label>Screen rotation (USB-C position)</label><select onchange='ro(this.value)'>%s</select>"
-        "<label>Units</label><select onchange='u(this.value)'>%s</select></div>"
-        "<div class=card><div class=t>Sound</div>"
-        "<label>Volume</label>"
-        "<input type=range min=0 max=100 value='%d' oninput='v(this.value,0)' onchange='v(this.value,1)'>"
-        "<label><input type=checkbox class=ck %s onchange='m(this.checked)'>Mute alerts</label>"
-        "<label>Alert on</label><select onchange='al(this.value)'>%s</select>"
-        "<label>Proximity alert</label><select onchange='px(this.value)'>%s</select>"
-        "<button type=button class=sec onclick='t()'>Test ping</button></div>"
+        "<button type=button class=sec onclick=\"location.href='/stats'\">Open operator dashboard &rarr;</button>"
+        "</div>"
+
+        // ----- Network -----
         "<div class=card><div class=t>Network</div>"
         "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>Forget the saved WiFi and reopen the setup portal.</p>"
         "<form method=POST action=/wifi><button class=w>Reset WiFi</button></form></div>"
+
         "<p class=ft>Reach me at <code>feedback.local</code> &middot; <a href=/update style='color:#9affc8'>Firmware update</a> &middot; v" FW_VERSION "</p>"
         "<script>"
-        "var C=[%.5f,%.5f];var MAP=L.map('map').setView(C,10);"
-        "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'(c) OpenStreetMap'}).addTo(MAP);"
-        "var MK=L.marker(C,{draggable:true}).addTo(MAP);"
-        "function S(p){document.getElementById('lat').value=p.lat.toFixed(5);document.getElementById('lon').value=p.lng.toFixed(5);}"
-        "MK.on('dragend',function(){S(MK.getLatLng());});"
-        "MAP.on('click',function(e){MK.setLatLng(e.latlng);S(e.latlng);});"
-        "setTimeout(function(){MAP.invalidateSize();},300);"
         "function b(v,s){fetch('/bright?v='+v+(s?'&save=1':''))}"
-        "function v(x,s){fetch('/vol?v='+x+(s?'&save=1':''))}"
-        "function m(c){fetch('/vol?mute='+(c?1:0)+'&save=1')}"
-        "function t(){fetch('/vol?test=1')}"
-        "function d(v){fetch('/idle?v='+v+'&save=1')}"
-        "function sw(c){fetch('/sweep?v='+(c?1:0)+'&save=1')}"
-        "function ap(c){fetch('/airports?v='+(c?1:0)+'&save=1')}"
-        "function hg(c){fetch('/ground?v='+(c?1:0)+'&save=1')}"
-        "function ma(v){fetch('/altmin?v='+v+'&save=1')}"
-        "function mo(c){fetch('/milonly?v='+(c?1:0)+'&save=1')}"
-        "function tl(v){fetch('/trail?v='+v+'&save=1')}"
-        "function mx(v){fetch('/maxac?v='+v+'&save=1')}"
-        "function ro(v){fetch('/rotate?v='+v+'&save=1')}"
-        "function u(v){fetch('/units?v='+v+'&save=1')}"
-        "function al(v){fetch('/alerts?mode='+v+'&save=1')}"
-        "function px(v){fetch('/alerts?prox='+v+'&save=1')}"
-        "function gp(c){fetch('/gps?v='+(c?1:0)+'&save=1')}"
-        // auto-pick the visitor's time zone from their browser clock (only if they haven't set one)
-        "var TZSET=%d;(function(){if(TZSET)return;"
-        "var d=new Date(),j=new Date(d.getFullYear(),0,1).getTimezoneOffset(),"
-        "u=new Date(d.getFullYear(),6,1).getTimezoneOffset(),o=-Math.max(j,u),s=(j!=u)?1:0,"
-        "e=document.querySelector('select[name=tz]'),b=-1,i;"
-        "for(i=0;i<e.options.length;i++){if(+e.options[i].dataset.off===o&&+e.options[i].dataset.dst===s){b=i;break;}}"
-        "if(b<0)for(i=0;i<e.options.length;i++){if(+e.options[i].dataset.off===o){b=i;break;}}"
-        "if(b>=0)e.selectedIndex=b;})();</script></body></html>",
-        g_settings.homeLat, g_settings.homeLon, gpsRow.c_str(), ropts.c_str(), topts.c_str(),
-        tzopts.c_str(),
-        g_brightnessDay, iopts.c_str(), g_showSweep ? "checked" : "",
-        g_showAirports ? "checked" : "", g_hideGround ? "checked" : "", maopts.c_str(), g_milOnly ? "checked" : "",
-        tlopts.c_str(), mxopts.c_str(), rotopts.c_str(), uopts.c_str(),
-        g_volume, g_muted ? "checked" : "", aopts.c_str(), popts.c_str(),
-        g_settings.homeLat, g_settings.homeLon, (g_tz == TZ_STR ? 0 : 1));
+        "</script></body></html>",
+        st.mode == 0 ? " selected" : "", st.mode == 1 ? " selected" : "",
+        q, rev, rin, whk,
+        cd_s, cd_s,
+        g_brightnessDay);
     g_web.send(200, "text/html", buf);
 }
 
 static void handleSave() {
-    Preferences p;
-    p.begin("capsuleradar", false);
-    // Reject out-of-range coordinates so a typo can't leave the radar unusable.
-    if (g_web.hasArg("lat")) {
-        const double lat = g_web.arg("lat").toDouble();
-        if (lat >= -90.0 && lat <= 90.0) p.putDouble("homeLat", lat);
+    feedback_log::Settings st;
+    feedback_log::loadSettings(st);
+
+    if (g_web.hasArg("mode")) {
+        const int m = g_web.arg("mode").toInt();
+        st.mode = (uint8_t)((m == 1) ? 1 : 0);
     }
-    if (g_web.hasArg("lon")) {
-        const double lon = g_web.arg("lon").toDouble();
-        if (lon >= -180.0 && lon <= 180.0) p.putDouble("homeLon", lon);
+    if (g_web.hasArg("q")) {
+        String s = g_web.arg("q");
+        s.trim();
+        if (s.length() > FEEDBACK_MAX_QUESTION) s = s.substring(0, FEEDBACK_MAX_QUESTION);
+        strncpy(st.question, s.c_str(), sizeof(st.question) - 1);
+        st.question[sizeof(st.question) - 1] = 0;
     }
-    if (g_web.hasArg("range")) p.putFloat("rangeKm", g_web.arg("range").toFloat());
-    if (g_web.hasArg("theme")) p.putInt("theme", g_web.arg("theme").toInt());
-    if (g_web.hasArg("tz")) {
-        const int i = g_web.arg("tz").toInt();
-        if (i >= 0 && i < TZOPTS_N) p.putString("tz", TZOPTS[i].tz);
+    if (g_web.hasArg("urlrev"))  { strncpy(st.urlReview,   g_web.arg("urlrev").c_str(),  sizeof(st.urlReview)   - 1); st.urlReview  [sizeof(st.urlReview)   - 1] = 0; }
+    if (g_web.hasArg("urlin"))   { strncpy(st.urlInternal, g_web.arg("urlin").c_str(),   sizeof(st.urlInternal) - 1); st.urlInternal[sizeof(st.urlInternal) - 1] = 0; }
+    if (g_web.hasArg("webhook")){ strncpy(st.webhookUrl,  g_web.arg("webhook").c_str(), sizeof(st.webhookUrl) - 1); st.webhookUrl [sizeof(st.webhookUrl)  - 1] = 0; }
+    if (g_web.hasArg("cooldown")) {
+        const long c = g_web.arg("cooldown").toInt();
+        st.cooldownMs = (uint16_t)constrain((int)c, 2, 30) * 1000;
     }
-    p.end();
+
+    feedback_log::saveSettings(st);
+    feedback_log::applySettings(st);   // live update (question/URLs/cooldown/webhook + mode)
+
     g_web.send(200, "text/html",
-        "<meta http-equiv=refresh content='4;url=/'><body style='background:#06100a;color:#1dff86;"
-        "font-family:sans-serif;padding:24px'>Saved. Restarting&hellip;</body>");
-    delay(400);
-    ESP.restart();
+        "<meta http-equiv=refresh content='2;url=/'><body style='background:#06100a;color:#1dff86;"
+        "font-family:sans-serif;padding:24px'>Saved.</body>");
+}
+
+static void handleStatsPage() {
+    char buf[8192];
+    const int n = stats_html::render_html(buf, sizeof(buf));
+    if (n <= 0) { g_web.send(500, "text/plain", "render failed"); return; }
+    g_web.send(200, "text/html", buf);
+}
+
+static void handleStatsApi() {
+    char buf[3072];
+    const int n = stats_html::render_json(buf, sizeof(buf));
+    if (n <= 0) { g_web.send(500, "text/plain", "render failed"); return; }
+    g_web.send(200, "application/json", buf);
+}
+
+// /webhook?v=<url>&save=1   (live; no /save needed)
+static void handleWebhookUrl() {
+    if (g_web.hasArg("v")) {
+        feedback_log::Settings st;
+        feedback_log::loadSettings(st);
+        strncpy(st.webhookUrl, g_web.arg("v").c_str(), sizeof(st.webhookUrl) - 1);
+        st.webhookUrl[sizeof(st.webhookUrl) - 1] = 0;
+        feedback_log::setWebhookUrl(st.webhookUrl);
+        if (g_web.hasArg("save")) { feedback_log::saveSettings(st); }
+    }
+    g_web.send(200, "text/plain", "ok");
+}
+
+// /mode?v=0|1&save=1
+static void handleMode() {
+    if (g_web.hasArg("v")) {
+        feedback_log::Settings st;
+        feedback_log::loadSettings(st);
+        st.mode = (uint8_t)((g_web.arg("v").toInt() == 1) ? 1 : 0);
+        feedback_view::setMode((int)st.mode);
+        if (g_web.hasArg("save")) { feedback_log::saveSettings(st); }
+    }
+    g_web.send(200, "text/plain", "ok");
+}
+
+// /q?v=<text>&save=1  (live; truncated to FEEDBACK_MAX_QUESTION)
+static void handleQuestion() {
+    if (g_web.hasArg("v")) {
+        feedback_log::Settings st;
+        feedback_log::loadSettings(st);
+        String s = g_web.arg("v");
+        s.trim();
+        if (s.length() > FEEDBACK_MAX_QUESTION) s = s.substring(0, FEEDBACK_MAX_QUESTION);
+        strncpy(st.question, s.c_str(), sizeof(st.question) - 1);
+        st.question[sizeof(st.question) - 1] = 0;
+        feedback_view::setQuestion(st.question);
+        if (g_web.hasArg("save")) { feedback_log::saveSettings(st); }
+    }
+    g_web.send(200, "text/plain", "ok");
+}
+
+// /urlrev?v=<url>&save=1   / /urlin?v=<url>&save=1   (live; refreshes LVGL QR widgets)
+static void handleUrl() {
+    if (g_web.hasArg("v")) {
+        const bool internal = (g_web.uri() == "/urlin");
+        feedback_log::Settings st;
+        feedback_log::loadSettings(st);
+        if (internal) {
+            strncpy(st.urlInternal, g_web.arg("v").c_str(), sizeof(st.urlInternal) - 1);
+            st.urlInternal[sizeof(st.urlInternal) - 1] = 0;
+            feedback_view::setUrlInternal(st.urlInternal);
+        } else {
+            strncpy(st.urlReview, g_web.arg("v").c_str(), sizeof(st.urlReview) - 1);
+            st.urlReview[sizeof(st.urlReview) - 1] = 0;
+            feedback_view::setUrlReview(st.urlReview);
+        }
+        if (g_web.hasArg("save")) { feedback_log::saveSettings(st); }
+    }
+    g_web.send(200, "text/plain", "ok");
+}
+
+// /cooldown?v=2..30&save=1   (seconds)
+static void handleCooldown() {
+    if (g_web.hasArg("v")) {
+        const long s = g_web.arg("v").toInt();
+        const int clamped = (int)constrain((int)s, 2, 30);
+        feedback_view::setCooldownMs(clamped * 1000);
+        if (g_web.hasArg("save")) {
+            feedback_log::Settings st;
+            feedback_log::loadSettings(st);
+            st.cooldownMs = (uint16_t)(clamped * 1000);
+            feedback_log::saveSettings(st);
+        }
+    }
+    g_web.send(200, "text/plain", "ok");
 }
 
 static void handleWifi() {
@@ -657,6 +618,14 @@ void setup() {
     feedback_log::begin();
     feedback_log::setWebhookUrl(FEEDBACK_WEBHOOK_URL);    // "" = disabled
 
+    // --- Kiosk operator settings: load from NVS, push into feedback_view +
+    //     log (live: question/URLs/cooldown apply now; mode may re-init the view).
+    {
+        feedback_log::Settings fbset;
+        feedback_log::loadSettings(fbset);
+        feedback_log::applySettings(fbset);
+    }
+
     // --- Display + LVGL (M0) ----------------------------------------------
     // CO5300 AMOLED over QSPI + LVGL draw buffers in PSRAM, then a hello screen.
     // The panel is powered from the always-on DC1 rail, so it lights without the
@@ -735,9 +704,17 @@ void setup() {
 
     // --- (no application task; the feedback terminal is fully on-device) ---
 
-    // configuration web page (http://capsuleradar.local/)
+    // configuration web page (http://feedback.local/) + /stats dashboard + API
     g_web.on("/", handleRoot);
     g_web.on("/save", HTTP_POST, handleSave);
+    g_web.on("/stats", handleStatsPage);
+    g_web.on("/api/stats", handleStatsApi);
+    g_web.on("/webhook", handleWebhookUrl);
+    g_web.on("/mode", handleMode);
+    g_web.on("/q", handleQuestion);
+    g_web.on("/urlrev", handleUrl);
+    g_web.on("/urlin", handleUrl);
+    g_web.on("/cooldown", handleCooldown);
     g_web.on("/wifi", HTTP_POST, handleWifi);
     g_web.on("/bright", handleBright);
     g_web.on("/vol", handleVol);
