@@ -27,7 +27,6 @@
 #include <nvs.h>                    // erase the driver's "nvs.net80211" namespace (WiFi reset)
 
 // ---- shared state ----
-static RadarSettings         g_settings;
 static WiFiManager           g_wm;
 static int                   g_brightnessDay = BRIGHTNESS_DEFAULT;   // user brightness (web/NVS)
 static int                   g_volume = 60;                          // alert volume 0..100 (web/NVS)
@@ -80,9 +79,6 @@ static const int TZOPTS_N = sizeof(TZOPTS) / sizeof(TZOPTS[0]);
 static void loadSettings() {
     Preferences p;
     p.begin("capsuleradar", true);
-    g_settings.homeLat = p.getDouble("homeLat", HOME_LAT_DEFAULT);
-    g_settings.homeLon = p.getDouble("homeLon", HOME_LON_DEFAULT);
-    g_settings.rangeKm = p.getFloat("rangeKm", RANGE_KM_DEFAULT);
     g_brightnessDay    = p.getInt("bright", BRIGHTNESS_DEFAULT);
     g_volume           = p.getInt("vol", 60);
     g_muted            = p.getBool("mute", false);
@@ -612,8 +608,6 @@ void setup() {
     Serial.printf("PSRAM: %u bytes free\n", (unsigned)ESP.getFreePsram());
 
     loadSettings();
-    route_cache_begin();   // clear stale route cache if the label format changed
-
     // --- Event log (load NVS counters; queue the webhook if a URL is set) ---
     feedback_log::begin();
     feedback_log::setWebhookUrl(FEEDBACK_WEBHOOK_URL);    // "" = disabled
