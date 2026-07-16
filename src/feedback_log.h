@@ -64,14 +64,8 @@ DayCount day(int day_back);                           // 0 = today, 1 = yesterda
 
 void setWebhookUrl(const char *url);                  // "" = disabled
 
-// Forward declarations so the function signatures below compile even when this
-// header is included by a TU that only needs the API (e.g. stats_html.h).
-struct Settings;
-struct HeatCell;
-struct HeatGrid;
-struct DaySeries;
-
 // ----- operator settings (NVS namespace "kiosk") -----
+// Full definitions live here so callers (e.g. stats_html.h) can hold these by value.
 void loadSettings(Settings &out);                     // fill from NVS or compile-time defaults
 void saveSettings(const Settings &s);                 // persist to NVS
 void applySettings(const Settings &s);                // push into feedback_view (live) + setWebhookUrl()
