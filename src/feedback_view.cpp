@@ -489,4 +489,20 @@ void setUrlInternal(const char *url) {
     lv_obj_invalidate(s.qr_internal);
 }
 
+// Smooth out a string into a label, replacing unsupported chars with '?' so we
+// never hit a missing-glyph code point under the bundled Montserrat font.
+static void safe_set_label(lv_obj_t *lbl, const char *s) {
+    if (!lbl) return;
+    char buf[FEEDBACK_MAX_QUESTION + 1];
+    size_t n = 0;
+    if (s) while (*s && n < sizeof(buf) - 1) {
+        unsigned char c = (unsigned char)*s++;
+        buf[n++] = (c >= 0x20 && c < 0x7f) ? (char)c : '?';
+    }
+    buf[n] = 0;
+    lv_label_set_text(lbl, buf);
+}
+
+void setQuestionSafe(const char *text) { safe_set_label(s.lbl_question, text); }
+
 } // namespace feedback_view
