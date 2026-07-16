@@ -10,10 +10,10 @@
 // Bounded heap usage: callers pass `static char buf[N]`, we don't alloc.
 
 #pragma once
-#include "feedback_log.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include "feedback_log.h"
 
 namespace stats_html {
 
