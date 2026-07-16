@@ -85,6 +85,13 @@ struct S {
     lv_obj_t      *qr_internal  = nullptr;   // FEEDBACK_URL_INTERNAL in v_qr_bad
     lv_obj_t      *qr_review2   = nullptr;   // secondary "Or leave a public review" widget
 
+    // admin overlay (IDLE long-press) -- built once, shown on demand
+    lv_obj_t      *v_admin     = nullptr;
+    lv_obj_t      *lbl_today   = nullptr;
+    lv_obj_t      *lbl_ip      = nullptr;
+    lv_obj_t      *lbl_url     = nullptr;
+    lv_timer_t    *t_admin     = nullptr;     // auto-dismiss after FEEDBACK_ADMIN_PING_MS
+
     lv_timer_t    *t_thanks  = nullptr;
     lv_timer_t    *t_qr      = nullptr;
     lv_anim_t      a_cd;
@@ -176,8 +183,18 @@ static void qr_tap_cb(lv_event_t *) {
     if (s.st != ST_QR_GOOD && s.st != ST_QR_BAD) return;
     goto_idle_with_cooldown();                     // tap = skip the 12s wait
 }
-static void longpress_cb(lv_event_t *) {
-    FB_LOG("[fb] long-press 3s - admin menu reserved\n");
+static void admin_close_cb(lv_event_t *) { feedback_view::setAdminVisible(false); }
+
+static void admin_auto_close_cb(lv_timer_t *) { feedback_view::setAdminVisible(false); }
+
+// Long-press on the IDLE empty area opens the read-only admin overlay.
+// We filter by event target so a long-press on a smiley does NOT also open
+// admin (the smiley's CLICKED handler will still record the rating).
+static void longpress_cb(lv_event_t *e) {
+    if (s.st != ST_IDLE) return;
+    if (e && lv_event_get_target(e) != s.v_idle) return;
+    FB_LOG("[fb] long-press 3s - admin overlay\n");
+    feedback_view::setAdminVisible(true);
 }
 
 // =============================================================================
@@ -455,6 +472,76 @@ void init(void *lv_parent) {
         (void)ind;   // admin-menu handler will own the long-press on both envs
     }
 
+    // -------------------- Admin overlay (read-only, IDLE long-press) ---------
+    s.v_admin = lv_obj_create(s.root);
+    lv_obj_remove_style_all(s.v_admin);
+    lv_obj_set_size(s.v_admin, SCREEN_W, SCREEN_H);
+    lv_obj_center(s.v_admin);
+    lv_obj_set_style_bg_color(s.v_admin, lv_color_hex(0x04140b), 0);
+    lv_obj_set_style_bg_opa(s.v_admin, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s.v_admin, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_clip_corner(s.v_admin, true, 0);
+    lv_obj_clear_flag(s.v_admin, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s.v_admin, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *aTitle = lv_label_create(s.v_admin);
+    lv_label_set_text(aTitle, "FEEDBACK KIOSK");
+    lv_obj_set_style_text_font(aTitle, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(aTitle, UI_GREEN, 0);
+    lv_obj_align(aTitle, LV_ALIGN_TOP_MID, 0, 80);
+
+    lv_obj_t *sec = lv_label_create(s.v_admin);
+    lv_label_set_text(sec, "VANDAAG");
+    lv_obj_set_style_text_font(sec, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(sec, UI_SOFT, 0);
+    lv_obj_set_style_text_opa(sec, 180, 0);
+    lv_obj_align(sec, LV_ALIGN_TOP_MID, 0, 120);
+
+    s.lbl_today = lv_label_create(s.v_admin);
+    lv_label_set_text(s.lbl_today, "GOED 0   NEUTRAAL 0   ONTEVREDEN 0");
+    lv_obj_set_style_text_font(s.lbl_today, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(s.lbl_today, UI_INK, 0);
+    lv_obj_align(s.lbl_today, LV_ALIGN_TOP_MID, 0, 148);
+
+    lv_obj_t *sec2 = lv_label_create(s.v_admin);
+    lv_label_set_text(sec2, "CONFIGURATIE");
+    lv_obj_set_style_text_font(sec2, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(sec2, UI_SOFT, 0);
+    lv_obj_set_style_text_opa(sec2, 180, 0);
+    lv_obj_align(sec2, LV_ALIGN_TOP_MID, 0, 196);
+
+    s.lbl_ip = lv_label_create(s.v_admin);
+    lv_label_set_text(s.lbl_ip, "IP: -");
+    lv_obj_set_style_text_font(s.lbl_ip, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s.lbl_ip, UI_INK, 0);
+    lv_obj_align(s.lbl_ip, LV_ALIGN_TOP_MID, 0, 222);
+
+    s.lbl_url = lv_label_create(s.v_admin);
+    lv_label_set_text(s.lbl_url, "http://feedback.local/");
+    lv_obj_set_style_text_font(s.lbl_url, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s.lbl_url, UI_GREEN, 0);
+    lv_obj_align(s.lbl_url, LV_ALIGN_TOP_MID, 0, 244);
+
+    lv_obj_t *close = lv_btn_create(s.v_admin);
+    lv_obj_set_size(close, 200, 50);
+    lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 0, -110);
+    lv_obj_set_style_radius(close, 12, 0);
+    lv_obj_set_style_bg_color(close, UI_GREEN, 0);
+    lv_obj_set_style_bg_opa(close, LV_OPA_COVER, 0);
+    lv_obj_t *closeLbl = lv_label_create(close);
+    lv_label_set_text(closeLbl, "Sluiten");
+    lv_obj_set_style_text_color(closeLbl, lv_color_hex(0x04140b), 0);
+    lv_obj_set_style_text_font(closeLbl, &lv_font_montserrat_16, 0);
+    lv_obj_center(closeLbl);
+    lv_obj_add_event_cb(close, admin_close_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *hint = lv_label_create(s.v_admin);
+    lv_label_set_text(hint, "Auto-dismisses in 10 s");
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(hint, UI_DIM, 0);
+    lv_obj_set_style_text_opa(hint, 160, 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -50);
+
     FB_LOG("[fb] state machine ready (IDLE / THANKS / QR / COOLDOWN)\n");
 }
 
@@ -505,5 +592,46 @@ static void safe_set_label(lv_obj_t *lbl, const char *s) {
 }
 
 void setQuestionSafe(const char *text) { safe_set_label(s.lbl_question, text); }
+
+// -----------------------------------------------------------------------------
+// Admin overlay (read-only). Long-press on IDLE opens it; auto-dismisses after
+// FEEDBACK_ADMIN_PING_MS. Live data (IP, today's counts) is pushed from main.
+// -----------------------------------------------------------------------------
+void setAdminVisible(bool on) {
+    if (!s.v_admin) return;
+    if (on) {
+        lv_obj_clear_flag(s.v_admin, LV_OBJ_FLAG_HIDDEN);
+        if (s.t_admin) {
+            lv_timer_set_repeat_count(s.t_admin, 1);
+            lv_timer_reset(s.t_admin);
+        } else {
+            s.t_admin = lv_timer_create(admin_auto_close_cb,
+                                        FEEDBACK_ADMIN_PING_MS, nullptr);
+            lv_timer_set_repeat_count(s.t_admin, 1);
+        }
+        FB_LOG("[fb] admin overlay open\n");
+    } else {
+        lv_obj_add_flag(s.v_admin, LV_OBJ_FLAG_HIDDEN);
+        if (s.t_admin) lv_timer_pause(s.t_admin);
+        FB_LOG("[fb] admin overlay close\n");
+    }
+}
+
+void setAdminIp(const char *ip) {
+    if (!ip || !s.lbl_ip || !s.lbl_url) return;
+    char buf[48];
+    snprintf(buf, sizeof(buf), "IP: %s", ip);
+    lv_label_set_text(s.lbl_ip, buf);
+    snprintf(buf, sizeof(buf), "http://%s/", ip);
+    lv_label_set_text(s.lbl_url, buf);
+}
+
+void setAdminToday(uint32_t good, uint32_t neutral, uint32_t bad) {
+    if (!s.lbl_today) return;
+    char buf[80];
+    snprintf(buf, sizeof(buf), "GOED %lu   NEUTRAAL %lu   ONTEVREDEN %lu",
+             (unsigned long)good, (unsigned long)neutral, (unsigned long)bad);
+    lv_label_set_text(s.lbl_today, buf);
+}
 
 } // namespace feedback_view

@@ -1,111 +1,114 @@
-# Capsule Radar 🛩️
+# Feedback Kiosk 🙂
 
 <p align="center">
   <a href="https://socquique.github.io/capsule-radar/"><img src="https://img.shields.io/badge/Flash%20in%20browser-FF6D00?logo=googlechrome&logoColor=white" alt="Flash in browser"></a>
-  <a href="https://makerworld.com/en/models/2907695-capsule-radar-live-flight-radar-desk-gadget"><img src="https://img.shields.io/badge/MakerWorld-3D%20case-1A8917?logo=bambulab&logoColor=white" alt="MakerWorld – 3D case"></a>
   <img src="https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white" alt="Board: ESP32-S3 round AMOLED">
   <a href="https://github.com/socquique/capsule-radar/releases"><img src="https://img.shields.io/github/v/tag/socquique/capsule-radar?label=firmware&color=7B42BC" alt="Firmware version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-2088FF" alt="License: MIT"></a>
-  <img src="https://img.shields.io/github/languages/count/socquique/capsule-radar?label=languages&color=FFC107" alt="Languages">
-  <a href="https://github.com/socquique/capsule-radar/stargazers"><img src="https://img.shields.io/github/stars/socquique/capsule-radar?style=social" alt="GitHub stars"></a>
 </p>
 
-<p align="center">
-  <img src="docs/img/device.JPG" width="330" alt="Capsule Radar — a live flight on the device">
-</p>
-<p align="center"><sub>A real flight on the device: callsign, type, altitude/speed, <b>route</b> (Lisbon → Abu Dhabi) and the <b>aircraft photo</b> — all looked up automatically.</sub></p>
+An **anonymous customer-feedback terminal** for the **Waveshare ESP32-S3-Touch-AMOLED-1.75** (round 466×466 AMOLED, capacitive touch). Tap a smiley, see a thank-you pulse, and get a QR for the public review page. Every interaction is logged locally and (if configured) POSTed to a webhook — **nothing personal is ever stored or transmitted**: only `(timestamp, answer)`.
 
-A live **ADS-B aircraft radar** for the **Waveshare ESP32-S3-Touch-AMOLED-1.75** — a round 466×466 AMOLED with capacitive touch. It pulls nearby aircraft from a free online feed over WiFi and plots them on a touch radar scope centered on your location, with live flight details and selectable visual skins.
+Designed for **unattended kiosk use**: watchdog-protected, WiFi self-healing, configurable on-screen question + dual-mode flow.
 
-> Visual reference: open [`assets/plane_radar_2.0_mockup.html`](assets/plane_radar_2.0_mockup.html) in a browser.
+## Two modes
 
-<p align="center"><img src="docs/img/radar.gif" width="360" alt="Capsule Radar live scope"></p>
+- **Review** (kapper / hair-salon): tap a smiley → THANK YOU pulse → QR code for the public review page (Google Maps, etc.). Bad / neutral taps show the *internal* feedback form QR first and a smaller *public* review QR second, so no customer is forced to leave a public review.
+- **Dashboard** (wachtkamer / waiting room): tap a smiley → THANK YOU pulse → straight back to IDLE. No QR is ever shown. All answers still go to the dashboard (NVS + webhook) — only the on-screen QR follow-up is suppressed.
 
-| Phosphor | Orb | Amber CRT | Military |
-|:--:|:--:|:--:|:--:|
-| ![Phosphor](docs/img/radar.png) | ![Orb](docs/img/orb.png) | ![Amber](docs/img/amber.png) | ![Military](docs/img/military.png) |
+Mode is set in the web config and stored in NVS; live update on save.
 
-<sub>Captured from the bundled desktop simulator (the device screen is round; the square corners are off-panel).</sub>
+## Flow
 
-## Features
-
-- **Live traffic** from [airplanes.live](https://airplanes.live) (free, non-commercial; fallback adsb.lol), updated every couple of seconds. Memory-safe streaming parser with a hard aircraft cap.
-- **Four themes** (long-press the screen to cycle, or pick on the web; remembered across reboots):
-  - **Phosphor** — green-on-black radar scope: rings, animated sweep, aircraft glyphs rotated by heading and color-coded by altitude, fading trails, emergency halo.
-  - **Orb** — green gradient + grid scope: the 7 nearest aircraft as yellow orbs emitting waves, off-range traffic as edge arrows pointing its way, orange target rings.
-  - **Amber CRT** and **Military** — the same scope retinted (warm amber / night-vision green).
-- **Touch** (CST9217): tap an aircraft → detail card (callsign, type, altitude, vertical speed, ground speed, distance, heading, squawk, and **origin → destination** looked up from adsbdb, cached in NVS). **Double-tap** to cycle zoom range. Swipe between **Radar / List / Stats** (circular layouts).
-- **Boot splash** + **alert pings** (ES8311 speaker): a soft ping when a new aircraft enters range, an urgent double-beep for emergency/military — volume & mute on the web page.
-- **Smooth motion**: aircraft glyphs glide between polls (interpolated) instead of jumping, using cheap partial redraws.
-- **Top HUD**: WiFi status (amber if the data feed is failing), in-range aircraft count, NTP/RTC clock, **battery %** (charging bolt, red when low), and the date. The Stats view footer shows how to reach the config page (`capsuleradar.local` + IP).
-- **Battery aware** (AXP2101): shows charge level, warns when low, and slows the feed poll rate on battery to save power.
-- **Real-time clock** (PCF85063): keeps the time/date across power loss, so the clock is right even before/without WiFi; re-synced from NTP when online.
-- **Smart brightness**: configurable idle auto-dim (no touch), and **face-down sleep** (QMI8658 IMU — flip it over to turn the screen off).
-- **GPS auto-location** (optional **-G** board variant): the Waveshare `-G` board has an onboard GPS (Quectel LC76G). Turn it on from the web page and the radar **sets its own center point automatically**, with an on-screen **satellite status icon** (amber while acquiring, green once it has a fix). Standard boards simply enter their location manually.
-- **Configuration web page** at `http://capsuleradar.local/` — center point (map picker), display range, theme, **time zone** (auto-detected from your browser), live brightness slider, sound, WiFi reset, and over-the-air firmware update. Settings persist in NVS.
-- **First-boot WiFi setup** via a captive portal (`CapsuleRadar-Setup`).
-
-## Hardware
-
-Waveshare **ESP32-S3-Touch-AMOLED-1.75**: ESP32-S3R8 (8 MB PSRAM, 16 MB flash), **CO5300** AMOLED over QSPI, **CST9217** touch, **QMI8658** IMU, **PCF85063** RTC, **AXP2101** PMIC, **ES8311** audio + speaker, microSD. All pins are in [`src/config.h`](src/config.h) (sourced from the board definition; no guessing).
-
-## Build & flash (PlatformIO)
-
-```bash
-pio run -e esp32-s3-amoled-175 -t upload     # build + flash over USB-C
-pio device monitor -b 115200                  # serial log
 ```
-On first flash you may need to hold **BOOT** then tap **RESET**. After flashing, on first boot connect your phone to the **`CapsuleRadar-Setup`** WiFi and enter your home network — real aircraft appear within seconds.
-
-## Flash from your browser (no toolchain)
-
-Makers can flash without installing anything using **ESP Web Tools** (Chrome or Edge on desktop):
-
-1. Open the **[web flasher](https://socquique.github.io/capsule-radar/)** (the project's GitHub Pages site).
-2. Plug the board in with a USB-C **data** cable and click **Install**.
-
-The flasher is built and published automatically by GitHub Actions ([`.github/workflows/webflasher.yml`](.github/workflows/webflasher.yml)) on every push to `main` — enable it once in **Settings → Pages → Source = GitHub Actions**. Tagged releases (`git tag v1.0.0 && git push origin v1.0.0`) also attach a ready-to-flash `CapsuleRadar-esp32s3.bin` to a **GitHub Release** via [`release.yml`](.github/workflows/release.yml). To preview the flasher locally:
-
-```bash
-./scripts/build_webflasher.sh                      # build + merge into web/flash/
-python3 -m http.server -d web/flash 8000           # serve (Web Serial works on localhost)
-# open http://localhost:8000
+IDLE (question + 3 smileys)        THANK YOU (~1.5 s)        QR (Review only, 12 s)
+   tap GOOD                        "Bedankt voor uw             big QR: public review
+   tap NEUTRAL                      feedback!"                  small QR: internal form (only on BAD/NEUTRAL)
+   tap BAD                                                   auto-returns to IDLE (or tap)
+        \                          soft ping via ES8311
+         \______________________________________________
+                                  COOLDOWN arc (~4 s) absorbs rapid taps
+                                  so a single user can't pollute the stats
 ```
 
-## Desktop simulator
+## Anonymity guarantee
 
-The whole UI is portable LVGL and runs on your computer (SDL2) — great for iterating without hardware:
-```bash
-pio run -e native -t exec     # opens a 466×466 window (needs SDL2: `brew install sdl2`)
-```
-Mouse = touch · `T` = switch theme · close the window to quit.
+Privacy is **by design** (GDPR / AVG):
+
+- The only event data written or sent is `{timestamp, answer}` — no IDs, no device IDs, no network metadata.
+- `answer` is an integer (0 = good, 1 = neutral, 2 = bad).
+- `timestamp` is the unix epoch; never combined with anything identifying.
+- A "no personal data" CSV row, a "no PII" NVS blob, a "no payload PII" webhook JSON.
+- The configuration web page runs only on the device's own WiFi (mDNS at `http://feedback.local/`); it is not exposed to the internet.
+
+## Local logging
+
+Every event is captured in three places at once (any of which can fail silently):
+
+| Surface          | Where                                 | When                       |
+|------------------|---------------------------------------|----------------------------|
+| RAM ring buffer  | last 500 events                       | instant (read by `/api/stats`) |
+| Daily counters   | NVS namespace `feedback_log`, 31 days | throttled (max once per 30 s) |
+| CSV              | `/sdcard/feedback.csv` (device) or `./feedback.csv` (sim) | instant |
+| Webhook (opt.)   | configurable URL                       | fire-and-forget from a low-priority FreeRTOS task, 3 s timeout, single shot, drops offline |
 
 ## Configuration
 
-Browse to `http://capsuleradar.local/` (or the device IP) on the same WiFi to set the **center lat/lon**, **display range**, **theme** and **brightness**, or to **reset WiFi**. Saving restarts the device to apply.
+Browse to `http://feedback.local/` on the same WiFi to set:
+
+- **Mode** (Review / Dashboard)
+- **Question text** (max 60 chars)
+- **Public review URL** (Google Maps review link)
+- **Internal feedback form URL**
+- **Webhook URL** (optional JSON endpoint)
+- **Cooldown** between interactions (2–30 s, default 4)
+- Brightness + WiFi reset (live)
+
+Saving the question, URLs, webhook and cooldown takes effect immediately; mode change may restart the view.
+
+The `/stats` dashboard (also on the LAN) shows today's counts, the last 31 days, and a weekday × daypart heatmap built from the 500-event ring buffer. JSON snapshot at `/api/stats`.
+
+On-device admin: hold for **3 seconds anywhere on the IDLE screen** to open a small read-only overlay with today's counts, the IP address / config URL, the firmware version, and a close button. The overlay auto-dismisses after 10 s. No settings can be changed on-device — use the web page.
+
+## Build & flash
+
+```bash
+pio run -e esp32-s3-amoled-175 -t upload     # build + flash over USB-C
+pio run -e native -t exec                    # desktop LVGL simulator (SDL2)
+```
+
+On first flash, hold **BOOT** then tap **RESET**; on first boot connect to the `Feedback-Setup` WiFi to set your network.
+
+The hardware watchdog (`esp_task_wdt`) resets the device if the UI loop ever locks up, and the WiFi reconnect path tries every 30 s when offline — so the kiosk can run unattended for weeks.
+
+For browser-based flashing, the project ships a web flasher (ESP Web Tools) at the GitHub Pages URL above. The `.github/workflows/webflasher.yml` builds and publishes it automatically; tagged releases attach a ready-to-flash `feedback-kiosk-esp32s3.bin` via `release.yml`.
+
+## Hardware
+
+Waveshare **ESP32-S3-Touch-AMOLED-1.75**: ESP32-S3R8 (8 MB PSRAM, 16 MB flash), **CO5300** AMOLED over QSPI, **CST9217** touch, **QMI8658** IMU, **PCF85063** RTC, **AXP2101** PMIC, **ES8311** audio + speaker. All pins are in `src/config.h` (sourced from the board definition; no guessing).
 
 ## Repo layout
 
 ```
 src/
-  config.h           pins + tunables (Dénia, Spain by default)
-  main.cpp           tasks, WiFi/NTP, web config, brightness/IMU glue
-  display.*          CO5300 (Arduino_GFX) + LVGL bring-up
-  radar_view.*       the radar scope, aircraft, themes
-  ui.*               views (radar/list/stats) + detail card + HUD
-  touch_cst9217.*    capacitive touch driver
-  imu_qmi8658.*      accelerometer (face-down sleep)
-  battery.*          AXP2101 battery gauge
-  rtc_pcf85063.*     PCF85063 real-time clock
-  adsb_client.*      airplanes.live fetch + parse
-  route*.* route.*   origin→destination lookup (adsbdb)
-  sim_main.cpp       native SDL simulator (not flashed)
-include/lv_conf.h    LVGL config (v8)
-web/flash/           browser web-flasher (ESP Web Tools) for makers
-scripts/             build_webflasher.sh (merge firmware -> single .bin)
-docs/                hardware / data-source / architecture notes
+  config.h              pins + tunables
+  main.cpp              setup/loop: WiFi + NTP + web config + watchdog
+  display.*             CO5300 (Arduino_GFX) + LVGL bring-up
+  feedback_view.*       kiosk state machine (IDLE / THANKS / QR / COOLDOWN / admin)
+  feedback_log.*        anonymous event log (ring + NVS + CSV + webhook)
+  ui.*                  top HUD + boot splash
+  touch_cst9217.*       capacitive touch driver
+  imu_qmi8658.*         accelerometer (face-down sleep)
+  battery.*             AXP2101 battery gauge
+  rtc_pcf85063.*        PCF85063 real-time clock
+  audio.*               ES8311 soft ping
+  sim_main.cpp          native SDL simulator (not flashed)
+include/lv_conf.h       LVGL config (v8)
+web/flash/              browser web-flasher (ESP Web Tools)
+scripts/                build_webflasher.sh
+docs/                   hardware / data-source / architecture notes
 ```
 
 ## Data & license
 
-**Firmware / code: [MIT](LICENSE)** — fork and build on it freely (keep the notice). Aircraft data: **airplanes.live** (free, **non-commercial / educational** — exactly this project; be polite with request cadence). Routes: **adsbdb.com** (free). Personal/hobby project. The 3D-printed enclosure is published on [MakerWorld](https://makerworld.com/en/models/2907695-capsule-radar-live-flight-radar-desk-gadget) (enclosure + this firmware).
+**Firmware / code: [MIT](LICENSE)** — fork and build on it freely. The firmware deliberately stores and transmits only an anonymous answer and a timestamp; no personal data, no device IDs, no network metadata. Personal / hobby project.

@@ -25,6 +25,7 @@
 #include <esp_heap_caps.h>          // largest-free-block metric (heap health)
 #include <esp_wifi.h>               // WiFi driver control (reset must survive the reboot)
 #include <nvs.h>                    // erase the driver's "nvs.net80211" namespace (WiFi reset)
+#include <esp_task_wdt.h>           // watchdog for the UI loop (auto-reset on hang)
 
 // ---- shared state ----
 static WiFiManager           g_wm;
@@ -692,6 +693,13 @@ void setup() {
         Serial.println("[wifi] connected");
     else
         Serial.println("[wifi] config portal open - join 'Feedback-Setup' to set WiFi; UI stays live");
+    // Unattended kiosks must self-heal after long power or AP outages.
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
+    // Hardware watchdog: reset the device if the UI loop ever locks up for >30 s.
+    (void)esp_task_wdt_init(30, true);
+    esp_task_wdt_add(nullptr);   // protect the calling (loop) task
+    Serial.println("[wdt] watchdog armed (30 s)");
 
     // --- OTA ---------------------------------------------------------------
     // ArduinoOTA is started from loop() once WiFi connects (see otaUp there).
@@ -744,6 +752,23 @@ void loop() {
     g_web.handleClient();           // serve the configuration web page
 
     feedback_log::loop();         // throttled NVS flush + webhook queue drain (no-op when idle)
+
+    // WiFi self-heal (unattended kiosk). Try a reconnect every 30 s if disconnected.
+    static uint32_t lastWifiCheck = 0;
+    if (WiFi.status() != WL_CONNECTED && millis() - lastWifiCheck > 30000) {
+        lastWifiCheck = millis();
+        Serial.println("[wifi] disconnected -> reconnecting");
+        WiFi.reconnect();
+    }
+    // Pet the watchdog so a healthy loop never resets the device.
+    esp_task_wdt_reset();
+
+    // Wake-to-full-bright on any touch (only the dim path is affected; the
+    // face-down sleep still wins via IMU -> applyBrightness is conservative).
+    if (display::inactiveMs() < 50 && g_idle) {
+        g_idle = false;
+        applyBrightness();
+    }
     // scheduled reboot after a fresh WiFi config (see setSaveConfigCallback)
     if (g_rebootAtMs && (int32_t)(millis() - g_rebootAtMs) >= 0) { delay(50); ESP.restart(); }
 
@@ -787,11 +812,19 @@ void loop() {
         const int  rssi   = wifiUp ? (int)WiFi.RSSI() : -127;
         ui_set_status(wifiUp, wifiUp, rssi, clk);
         char net[80];
-        if (WiFi.status() == WL_CONNECTED)
+        if (WiFi.status() == WL_CONNECTED) {
             snprintf(net, sizeof(net), "Configure at\nfeedback.local\n%s", WiFi.localIP().toString().c_str());
-        else
+            // mirror the IP into the on-device admin overlay (3 s cadence is fine)
+            feedback_view::setAdminIp(WiFi.localIP().toString().c_str());
+        } else {
             snprintf(net, sizeof(net), "WiFi setup:\njoin Feedback-Setup");
+        }
         ui_set_netinfo(net);
+        // live admin-overlay counters (from the persistent 31-day NVS table)
+        {
+            const feedback_log::DayCount tc = feedback_log::day(0);
+            feedback_view::setAdminToday(tc.good, tc.neutral, tc.bad);
+        }
         const bool bpresent = battery_present();
         ui_set_battery(battery_percent(), battery_charging(), bpresent);
         g_onBattery = bpresent && !battery_charging();

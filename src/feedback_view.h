@@ -68,4 +68,10 @@ void setUrlReview(const char *url);      // re-render the GOOD QR widget
 void setUrlInternal(const char *url);    // re-render the NEUTRAL/BAD QR widget
 void setCooldownMs(int ms);              // applied to the next cooldown animation
 
+// Admin overlay (IDLE long-press 3 s). All data shown read-only -- config
+// edits go through the web page at http://feedback.local/.
+void setAdminVisible(bool on);           // show / hide the admin overlay
+void setAdminIp(const char *ip);         // IP-address string (for the config URL)
+void setAdminToday(uint32_t good, uint32_t neutral, uint32_t bad);  // today's counts
+
 } // namespace feedback_view

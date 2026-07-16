@@ -123,16 +123,16 @@ void ui_splash_show(void) {
     lv_obj_set_style_arc_width(sweep, 4, LV_PART_INDICATOR);
 
     lv_obj_t *title = lv_label_create(cont);
-    lv_label_set_text(title, "FEEDBACK KIOSK");
+    lv_label_set_text(title, "FEEDBACK");
     lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(title, UI_GREEN, 0);
-    lv_obj_align(title, LV_ALIGN_CENTER, 0, 118);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, 110);
 
     lv_obj_t *sub = lv_label_create(cont);
-    lv_label_set_text(sub, "Customer feedback terminal");
+    lv_label_set_text(sub, "Tap a smiley to start");
     lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(sub, UI_SOFT, 0);
-    lv_obj_align(sub, LV_ALIGN_CENTER, 0, 150);
+    lv_obj_align(sub, LV_ALIGN_CENTER, 0, 142);
 
     lv_timer_t *t = lv_timer_create(splash_dismiss_cb, 2200, cont);   // hold, then fade out
     lv_timer_set_repeat_count(t, 1);

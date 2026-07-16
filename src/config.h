@@ -54,6 +54,8 @@ static const float RANGE_STEPS_KM[] = {10.0f, 20.0f, 30.0f, 50.0f, 100.0f};
 #define FEEDBACK_HITBOX_MIN       120         // minimum touch hit box per smiley (px)
 #define FEEDBACK_WEBHOOK_URL      ""          // placeholder; web UI configures later
 #define FEEDBACK_FLUSH_INTERVAL_S 30          // NVS daily-counter write throttle (also flushed on QR transition)
+#define FEEDBACK_ADMIN_LONGPRESS_MS 3000      // hold time on IDLE to open the on-device admin overlay
+#define FEEDBACK_ADMIN_PING_MS     10000      // auto-dismiss the admin overlay after this much idle
 
 // ---------- Kiosk operator settings (NVS namespace "kiosk") ----------
 // Mode: 0 = REVIEW (kapper: show QR for GOOD / internal + review for NEUTRAL+BAD),
