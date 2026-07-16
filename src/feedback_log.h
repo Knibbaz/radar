@@ -66,6 +66,14 @@ void setWebhookUrl(const char *url);                  // "" = disabled
 
 // ----- operator settings (NVS namespace "kiosk") -----
 // Full definitions live here so callers (e.g. stats_html.h) can hold these by value.
+struct Settings {
+    uint8_t  mode;                              // FeedbackMode
+    uint16_t cooldownMs;                        // 2000..30000 ms
+    char     question    [64];
+    char     urlReview   [128];
+    char     urlInternal [128];
+    char     webhookUrl  [128];
+};
 void loadSettings(Settings &out);                     // fill from NVS or compile-time defaults
 void saveSettings(const Settings &s);                 // persist to NVS
 void applySettings(const Settings &s);                // push into feedback_view (live) + setWebhookUrl()
