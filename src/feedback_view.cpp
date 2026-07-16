@@ -10,6 +10,7 @@
 
 #include "feedback_view.h"
 #include "config.h"
+#include "feedback_log.h"        // record() on every tap; flush() on QR state change
 
 // Audio path. The native SDL simulator doesn't link audio.cpp, so guard
 // the include + the call. On real hardware, AUDIO_NEW is a soft single
@@ -21,7 +22,6 @@
 #include <lvgl.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 
 // Serial.printf on device, stderr on the sim (where Arduino.h/Serial don't
 // exist). Matches the gating lv_conf.h uses for the Arduino tick fallback.
@@ -82,27 +82,6 @@ struct S {
 } s;
 } // anonymous namespace
 
-static const char *ans_name(FeedbackAnswer a) {
-    switch (a) {
-        case FEEDBACK_GOOD:    return "GOOD";
-        case FEEDBACK_NEUTRAL: return "NEUTRAL";
-        case FEEDBACK_BAD:     return "BAD";
-    }
-    return "?";
-}
-
-// Record the rating. Persistence / upload is added later -- for now we just
-// log a UTC timestamp. `time()` returns NTP-synced time on device (RTC is
-// kept current by main.cpp's NTP task); on the sim it's the host clock.
-static void log_answer(FeedbackAnswer a) {
-    time_t now = time(nullptr);
-    struct tm t;
-    gmtime_r(&now, &t);
-    FB_LOG("[fb] %s @ %04d-%02d-%02dT%02d:%02d:%02dZ\n",
-           ans_name(a),
-           t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
-           t.tm_hour, t.tm_min, t.tm_sec);
-}
 
 // ---- cooldown progress arc ----------------------------------------------------
 static void arc_cd_exec(void *obj, int32_t v) {
@@ -148,13 +127,14 @@ static void t_thanks_cb(lv_timer_t *) {
     // arm the QR -> IDLE one-shot
     s.t_qr = lv_timer_create(t_qr_cb, FEEDBACK_QR_MS, nullptr);
     lv_timer_set_repeat_count(s.t_qr, 1);
+    feedback_log::flush();           // state change to QR -> persist now (bypass throttle)
 }
 
 // IDLE -> THANKS
 static void goto_thanks(FeedbackAnswer a) {
     if (s.st != ST_IDLE) return;                   // defensive
     s.lastAnswer = a;
-    log_answer(a);
+    feedback_log::record((uint8_t)(a - FEEDBACK_GOOD));   // 1/2/3 -> 0/1/2 for the log
     s.st = ST_THANKS;
     lv_obj_add_flag(s.v_idle, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s.v_thanks, LV_OBJ_FLAG_HIDDEN);

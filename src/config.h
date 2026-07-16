@@ -52,6 +52,8 @@ static const float RANGE_STEPS_KM[] = {10.0f, 20.0f, 30.0f, 50.0f, 100.0f};
 #define FEEDBACK_COOLDOWN_MS      4000        // tap-absorb window after each interaction
 #define FEEDBACK_SMILEY_DIA       110         // visual diameter of each smiley (px)
 #define FEEDBACK_HITBOX_MIN       120         // minimum touch hit box per smiley (px)
+#define FEEDBACK_WEBHOOK_URL      ""          // placeholder; web UI configures later
+#define FEEDBACK_FLUSH_INTERVAL_S 30          // NVS daily-counter write throttle (also flushed on QR transition)
 
 // ---------- Debug ----------
 #define DEBUG_MEM           0               // 1 = print a [mem] heap/fps line every 5s on serial

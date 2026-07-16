@@ -5,6 +5,7 @@
 #include "config.h"
 #include "geo.h"                     // GPS distance check (haversine)
 #include "feedback_view.h"           // placeholder main canvas (was radar_view)
+#include "feedback_log.h"            // anonymous event log (ring + NVS counters + CSV + webhook)
 #include "ui.h"
 #include "display.h"                  // M0: CO5300 + LVGL bring-up
 #include "imu_qmi8658.h"             // face-down sleep
@@ -652,6 +653,10 @@ void setup() {
     loadSettings();
     route_cache_begin();   // clear stale route cache if the label format changed
 
+    // --- Event log (load NVS counters; queue the webhook if a URL is set) ---
+    feedback_log::begin();
+    feedback_log::setWebhookUrl(FEEDBACK_WEBHOOK_URL);    // "" = disabled
+
     // --- Display + LVGL (M0) ----------------------------------------------
     // CO5300 AMOLED over QSPI + LVGL draw buffers in PSRAM, then a hello screen.
     // The panel is powered from the always-on DC1 rail, so it lights without the
@@ -767,6 +772,7 @@ void loop() {
     g_wm.process();                 // service the WiFi config portal (non-blocking)
     g_web.handleClient();           // serve the configuration web page
 
+    feedback_log::loop();         // throttled NVS flush + webhook queue drain (no-op when idle)
     // scheduled reboot after a fresh WiFi config (see setSaveConfigCallback)
     if (g_rebootAtMs && (int32_t)(millis() - g_rebootAtMs) >= 0) { delay(50); ESP.restart(); }
 

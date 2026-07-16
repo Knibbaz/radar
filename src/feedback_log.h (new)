@@ -1,0 +1,46 @@
+#pragma once
+// Anonymous event log for the feedback kiosk.
+//
+// An "event" is exactly: (unix timestamp, answer). No IDs, no network metadata
+// (privacy by design -- nothing personal is stored anywhere). The answer is
+// 0 = good, 1 = neutral, 2 = bad.
+//
+// Four backends, all driven by record():
+//   1. RAM ring buffer of the last 500 events (cheap, no I/O).
+//   2. Per-day totals for the last 31 days, rolling.  Write-throttled to NVS:
+//      flushed at most once per FEEDBACK_FLUSH_INTERVAL_S, or on flush().
+//   3. CSV append to /sdcard/feedback.csv on device, ./feedback.csv in the
+//      native sim.  fopen failures are silent ("no card" == no CSV).
+//   4. Optional webhook (device only): FreeRTOS task with a 16-slot queue.
+//      Single POST per event, 3 s timeout, no retry, drops on offline.
+//
+// begin() / loop() / record() / flush() are all safe to call from core 1
+// (the LVGL thread that runs feedback_view's tap handler).
+
+#include <stdint.h>
+
+namespace feedback_log {
+
+struct Event {
+    uint32_t ts;        // unix epoch (RTC/NTP-synced on device, host clock in sim)
+    uint8_t  answer;    // 0 = good, 1 = neutral, 2 = bad
+    uint8_t  _pad[3];
+};
+
+struct DayCount {
+    uint16_t year;
+    uint8_t  mon, day;
+    uint32_t good, neutral, bad;
+};
+
+void begin();                                         // load NVS daily counts
+void loop();                                          // drive throttled NVS flush
+void record(uint8_t answer);                          // 0=good 1=neutral 2=bad; never blocks
+void flush();                                         // force-write throttled state now
+
+int      recentCopy(Event *out, int max);             // latest first; returns count copied
+DayCount day(int day_back);                           // 0 = today, 1 = yesterday, ... {0,...} if absent
+
+void setWebhookUrl(const char *url);                  // "" = disabled
+
+} // namespace feedback_log
