@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Feedback</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(circle at 50% -10%,#0a1f15,#04100a 130%);color:#cdd6d1;font-family:system-ui,-apple-system,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 16px;user-select:none;-webkit-user-select:none}
+.step{display:none;flex-direction:column;align-items:center;width:100%;max-width:400px;padding:40px 0 20px;min-height:100vh;justify-content:center}
+.step.active{display:flex}
+h2{color:#1dff86;font-size:22px;text-align:center;margin-bottom:32px;line-height:1.4}
+p.desc{color:#9affc8;font-size:14px;text-align:center;margin-bottom:24px}
+/* Stars */
+.stars{display:flex;gap:12px;margin-bottom:32px}
+.star{font-size:44px;cursor:pointer;color:#2a4a39;transition:color .15s;padding:4px}
+.star.active,.star:hover{color:#ffb23c}
+/* Textarea */
+textarea{width:100%;padding:14px;border-radius:10px;border:1px solid #2a4a39;background:#0c1a12;color:#eafff3;font-size:16px;font-family:inherit;resize:none;min-height:100px;margin-bottom:16px}
+textarea:focus{outline:none;border-color:#1dff86}
+/* Options */
+.opts{display:flex;flex-direction:column;gap:10px;width:100%;margin-bottom:24px}
+.opt{padding:16px;border-radius:10px;border:1px solid #2a4a39;background:#0c1a12;color:#eafff3;font-size:17px;text-align:center;cursor:pointer;transition:all .15s}
+.opt.selected{border-color:#1dff86;background:#143a2a;color:#1dff86;font-weight:700}
+.opt:active{transform:scale(0.97)}
+/* Buttons */
+.btn{width:100%;padding:14px;border:0;border-radius:10px;font-size:17px;font-weight:700;cursor:pointer;transition:opacity .15s;margin-top:8px}
+.btn:active{opacity:.7}
+.btn-primary{background:#1dff86;color:#04140b}
+.btn-secondary{background:transparent;color:#5f7a6c;margin-top:4px}
+/* Progress dots */
+.dots{display:flex;gap:8px;margin-top:24px}
+.dot{width:8px;height:8px;border-radius:50%;background:#2a4a39;transition:background .3s}
+.dot.active{background:#1dff86}
+.dot.done{background:#9affc8}
+/* Review ask */
+.review-btn{background:#1dff86;color:#04140b;padding:16px;border-radius:10px;font-size:17px;font-weight:700;text-decoration:none;display:block;text-align:center;width:100%;margin-bottom:12px}
+.review-btn:active{opacity:.7}
+.skip-btn{background:transparent;color:#5f7a6c;border:0;font-size:14px;cursor:pointer;padding:8px;width:100%;text-align:center}
+.ft{color:#5f7a6c;font-size:11px;text-align:center;margin-top:32px;padding-bottom:20px}
+.ft a{color:#9affc8}
+/* Thank you */
+.thank{font-size:48px;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div id="step-1" class="step active">
+  <h2 id="q-visit">Hoe was uw bezoek?</h2>
+  <div class="stars" id="stars">
+    <span class="star" data-v="1">&#9733;</span>
+    <span class="star" data-v="2">&#9733;</span>
+    <span class="star" data-v="3">&#9733;</span>
+    <span class="star" data-v="4">&#9733;</span>
+    <span class="star" data-v="5">&#9733;</span>
+  </div>
+  <button class="btn btn-primary" id="btn-1" disabled>Volgende</button>
+  <div class="dots"><span class="dot active"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+</div>
+
+<div id="step-2" class="step">
+  <h2>Wat kunnen we verbeteren?</h2>
+  <p class="desc">Laat een optionele opmerking achter</p>
+  <textarea id="improve" placeholder="Uw suggestie..."></textarea>
+  <button class="btn btn-primary" id="btn-2">Volgende</button>
+  <button class="btn btn-secondary" id="skip-2">Overslaan</button>
+  <div class="dots"><span class="dot done"></span><span class="dot active"></span><span class="dot"></span><span class="dot"></span></div>
+</div>
+
+<div id="step-3" class="step">
+  <h2>Hoe was de wachttijd?</h2>
+  <div class="opts" id="wait-opts">
+    <div class="opt" data-v="kort">Kort &mdash; snel geholpen</div>
+    <div class="opt" data-v="prima">Prima &mdash; zoals verwacht</div>
+    <div class="opt" data-v="lang">Te lang &mdash; moest wachten</div>
+  </div>
+  <button class="btn btn-primary" id="btn-3" disabled>Volgende</button>
+  <div class="dots"><span class="dot done"></span><span class="dot done"></span><span class="dot active"></span><span class="dot"></span></div>
+</div>
+
+<div id="step-4" class="step">
+  <div class="thank">&#10003;</div>
+  <h2 id="q-thanks">Bedankt voor uw feedback!</h2>
+  <p class="desc" id="review-text">Helpt ons door een Google review achter te laten?</p>
+  <a id="review-link" class="review-btn" href="#" target="_blank" rel="noopener">Laat een Google review achter</a>
+  <button class="skip-btn" id="no-review">Nee, bedankt</button>
+  <div class="dots"><span class="dot done"></span><span class="dot done"></span><span class="dot done"></span><span class="dot active"></span></div>
+  <p class="ft"><span id="loc-name"></span></p>
+</div>
+
+<p class="ft" style="width:100%;max-width:400px"><a href="#" id="privacy">Privacy</a> &mdash; Alleen anonieme antwoorden worden opgeslagen</p>
+
+<script>
+(function(){
+// Parse URL params
+var p = new URLSearchParams(window.location.search);
+var loc = p.get('loc') || '';
+var name = p.get('name') || '';
+var review = p.get('review') || '';
+var webhook = p.get('webhook') || '';
+var stepsStr = p.get('steps') || 'visit,improve,wait';
+var steps = stepsStr.split(',').filter(function(s){return s==='visit'||s==='improve'||s==='wait';});
+
+// Set business name
+if (name) {
+  document.getElementById('q-visit').textContent = 'Hoe was uw bezoek aan ' + name + '?';
+  document.getElementById('q-thanks').textContent = 'Bedankt voor uw feedback, ' + name + '!';
+  document.getElementById('loc-name').textContent = name;
+}
+
+// Step management
+var currentStep = 0;
+var answers = {};
+
+function showStep(i) {
+  document.querySelectorAll('.step').forEach(function(s){s.classList.remove('active');});
+  var el = document.getElementById('step-' + (i + 1));
+  if (el) el.classList.add('active');
+  currentStep = i;
+}
+
+function goToStep(i) {
+  showStep(i);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// Stars
+var starVal = 0;
+document.querySelectorAll('.star').forEach(function(s){
+  s.addEventListener('click',function(){
+    starVal = parseInt(this.getAttribute('data-v'));
+    document.querySelectorAll('.star').forEach(function(st){
+      st.classList.toggle('active', parseInt(st.getAttribute('data-v')) <= starVal);
+    });
+    document.getElementById('btn-1').disabled = false;
+  });
+});
+
+// Step 1 -> 2
+document.getElementById('btn-1').addEventListener('click',function(){
+  answers.visit = starVal;
+  goToStep(1);
+});
+
+// Step 2 -> 3
+document.getElementById('btn-2').addEventListener('click',function(){
+  answers.improve = document.getElementById('improve').value.trim();
+  goToStep(2);
+});
+document.getElementById('skip-2').addEventListener('click',function(){
+  answers.improve = '';
+  goToStep(2);
+});
+
+// Step 3 -> 4
+var waitVal = '';
+document.querySelectorAll('#wait-opts .opt').forEach(function(o){
+  o.addEventListener('click',function(){
+    waitVal = this.getAttribute('data-v');
+    document.querySelectorAll('#wait-opts .opt').forEach(function(opt){opt.classList.remove('selected');});
+    this.classList.add('selected');
+    document.getElementById('btn-3').disabled = false;
+  });
+});
+
+document.getElementById('btn-3').addEventListener('click',function(){
+  answers.wait = waitVal;
+  answers.loc = loc;
+  answers.ts = new Date().toISOString();
+
+  // POST to webhook (fire and forget)
+  if (webhook) {
+    var x = new XMLHttpRequest();
+    x.open('POST', webhook);
+    x.setRequestHeader('Content-Type','application/json');
+    x.send(JSON.stringify(answers));
+  }
+
+  goToStep(3);
+});
+
+// Step 4 - review ask
+var reviewedKey = 'reviewed_' + (loc || 'default');
+if (localStorage.getItem(reviewedKey)) {
+  document.getElementById('review-text').style.display = 'none';
+  document.getElementById('review-link').style.display = 'none';
+  document.getElementById('no-review').style.display = 'none';
+}
+
+if (review) {
+  document.getElementById('review-link').href = review;
+  document.getElementById('review-link').addEventListener('click',function(){
+    localStorage.setItem(reviewedKey, '1');
+    document.getElementById('review-text').style.display = 'none';
+    document.getElementById('review-link').style.display = 'none';
+    document.getElementById('no-review').style.display = 'none';
+  });
+} else {
+  document.getElementById('review-text').style.display = 'none';
+  document.getElementById('review-link').style.display = 'none';
+  document.getElementById('no-review').style.display = 'none';
+}
+
+document.getElementById('no-review').addEventListener('click',function(){
+  document.getElementById('review-text').style.display = 'none';
+  document.getElementById('review-link').style.display = 'none';
+  this.style.display = 'none';
+});
+
+// Privacy link
+var privUrl = 'https://' + (loc ? loc + '.' : '') + 'feedback.local/privacy';
+document.getElementById('privacy').href = privUrl;
+})();
+</script>
+</body>
+</html>

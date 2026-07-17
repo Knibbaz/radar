@@ -74,5 +74,10 @@ for the same Waveshare ESP32-S3-Touch-AMOLED-1.75 board. See `README.md` for the
 - [x] Remote config pull (HTTPS, Bearer token, versioned JSON)
 - [x] Config page shows remote version + last fetch
 
-## Fase 8 — Hosted survey page (todo)
-- [ ] web/survey/index.html — self-contained mobile survey page
+## Fase 8 — Hosted survey page (done)
+- [x] web/survey/index.html — self-contained mobile survey page
+- [x] Configured via URL params: ?loc, name, review, webhook, steps
+- [x] Multi-step flow: 1-5 stars, free text (optional), wait time (3 options), thank you + review ask
+- [x] Webhook POST on completion (JSON: loc, ts, visit, improve, wait)
+- [x] localStorage reviewed flag (geen consent banner nodig)
+- [x] Dutch strings, grote touch targets, geen external assets
