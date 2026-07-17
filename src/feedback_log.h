@@ -3,7 +3,8 @@
 //
 // An "event" is exactly: (unix timestamp, answer). No IDs, no network metadata
 // (privacy by design -- nothing personal is stored anywhere). The answer is
-// 0 = good, 1 = neutral, 2 = bad.
+// 0 = good, 2 = bad (value 1 / neutral was used in v1 and is kept for storage
+// backward compatibility, but no longer produced).
 //
 // Four backends, all driven by record():
 //   1. RAM ring buffer of the last 500 events (cheap, no I/O).
@@ -34,7 +35,7 @@ struct Event {
 struct DayCount {
     uint16_t year;
     uint8_t  mon, day;
-    uint32_t good, neutral, bad;
+    uint32_t good, neutral, bad;    // neutral kept for backward compat (always 0)
 };
 
 // 0 = REVIEW (default): show QR codes after the smiley tap.
