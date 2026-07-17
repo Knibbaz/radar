@@ -116,8 +116,8 @@ static lv_obj_t *make_smiley(lv_obj_t *parent, FeedbackAnswer ans,
     lv_obj_set_size(btn, hit, hit);
     lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
-    lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+    // NOT clickable — taps pass through to the parent container (choice_left/right)
+    lv_obj_clear_flag(btn, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_user_data(btn, (void *)(intptr_t)ans);
 
     // eyes (two small dark dots symmetric around center)
