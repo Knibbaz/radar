@@ -190,12 +190,32 @@ static void handleRoot() {
 
         // ----- Logo -----
         "<div class=card><div class=t>Logo</div>"
-        "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>Upload a PNG logo (max 200 KB, recommended 300x300).</p>"
-        "<form method=POST action=/logo enctype=multipart/form-data>"
-        "<input type=file name=logo accept='.png' required>"
-        "<button>Upload logo</button></form>"
+        "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>Upload a logo (PNG/JPG, resized to 300x300).</p>"
+        "<input type=file id=logoFile accept='image/*' onchange=resizeAndUpload(this.files[0])>"
+        "<div id=logoStatus style='color:#9affc8;font-size:12px;margin-top:8px'></div>"
         "<form method=POST action=/logo-remove>"
         "<button class=w style='margin-top:8px'>Remove logo</button></form></div>"
+        "<script>"
+        "function resizeAndUpload(file){"
+        "if(!file)return;var st=document.getElementById('logoStatus');st.innerText='Processing...';"
+        "var img=new Image(),r=new FileReader();"
+        "r.onload=function(e){img.onload=function(){"
+        "var MAX=300,w=img.width,h=img.height;"
+        "if(w>MAX||h>MAX){var r=Math.min(MAX/w,MAX/h);w=Math.round(w*r);h=Math.round(h*r);}"
+        "var c=document.createElement('canvas');c.width=w;c.height=h;"
+        "var ctx=c.getContext('2d');ctx.drawImage(img,0,0,w,h);"
+        "c.toBlob(function(b){"
+        "if(b.size>200*1024){st.innerText='Too large after resize ('+Math.round(b.size/1024)+'KB). Try a smaller source.';return;}"
+        "var fd=new FormData();fd.append('logo',b,'logo.png');"
+        "var x=new XMLHttpRequest();"
+        "x.upload.onprogress=function(e){if(e.lengthComputable)st.innerText='Uploading: '+Math.round(e.loaded/e.total*100)+'%';};"
+        "x.onload=function(){st.innerText='Logo uploaded! Refreshing...';setTimeout(function(){location.reload()},1500);};"
+        "x.onerror=function(){st.innerText='Upload failed.';};"
+        "x.open('POST','/logo');x.send(fd);"
+        "},'image/png');"
+        "};img.src=e.target.result;};r.readAsDataURL(file);"
+        "}"
+        "</script>"
 
         // ----- Network -----
         "<div class=card><div class=t>Network</div>"
@@ -416,6 +436,8 @@ static void handleUpdateUpload() {
 }
 
 // ---- logo upload / remove --------------------------------------------------
+static bool s_logoUploadOk = false;
+
 static void handleLogoUpload() {
     HTTPUpload &up = g_web.upload();
     if (up.status == UPLOAD_FILE_START) {
@@ -424,8 +446,8 @@ static void handleLogoUpload() {
             Serial.println("[logo] too large (>200KB), rejecting");
             return;
         }
+        s_logoUploadOk = false;
 #if defined(ESP_PLATFORM)
-        // Remove existing logo file
         if (SPIFFS.exists("/logo.png")) SPIFFS.remove("/logo.png");
 #endif
     } else if (up.status == UPLOAD_FILE_WRITE) {
@@ -435,10 +457,7 @@ static void handleLogoUpload() {
 #endif
     } else if (up.status == UPLOAD_FILE_END) {
         Serial.printf("[logo] done: %u bytes\n", (unsigned)up.totalSize);
-        feedback_view::loadLogo();
-        g_web.send(200, "text/html",
-            "<meta http-equiv=refresh content='2;url=/'><body style='background:#06100a;color:#1dff86;"
-            "font-family:sans-serif;padding:24px'>Logo uploaded.</body>");
+        s_logoUploadOk = true;
     }
 }
 
@@ -575,7 +594,14 @@ void setup() {
     g_web.on("/cooldown", handleCooldown);
     g_web.on("/wifi", HTTP_POST, handleWifi);
     g_web.on("/bright", handleBright);
-    g_web.on("/logo", HTTP_POST, []() { g_web.send(200, "text/plain", "OK"); }, handleLogoUpload);
+    g_web.on("/logo", HTTP_POST, []() {
+        if (s_logoUploadOk) {
+            feedback_view::loadLogo();
+            g_web.send(200, "text/plain", "OK");
+        } else {
+            g_web.send(400, "text/plain", "FAIL");
+        }
+    }, handleLogoUpload);
     g_web.on("/logo-remove", HTTP_POST, handleLogoRemove);
     g_web.on("/update", HTTP_GET, handleUpdatePage);
     g_web.on("/update", HTTP_POST,
