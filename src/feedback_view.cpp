@@ -90,6 +90,10 @@ struct S {
     lv_obj_t *lbl_url     = nullptr;
     lv_timer_t *t_admin   = nullptr;
 
+    // POP animation tap coordinates (for centering the circle)
+    lv_coord_t     popTapX = 0;
+    lv_coord_t     popTapY = 0;
+
     // Cooldown arc (progress ring on LOGO)
     lv_obj_t      *arc_cd  = nullptr;
     lv_anim_t      a_cd;
@@ -123,31 +127,31 @@ static lv_obj_t *make_smiley(lv_obj_t *parent, FeedbackAnswer ans,
     lv_obj_clear_flag(btn, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_user_data(btn, (void *)(intptr_t)ans);
 
-    // eyes (two small dark dots symmetric around center)
-    const lv_coord_t eyeOffX = dia / 5;
-    const lv_coord_t eyeOffY = -dia / 6;
-    const lv_coord_t eyeS    = dia / 6;
+    // eyes (two white dots, symmetric, closer together for better look)
+    const lv_coord_t eyeOffX = dia / 6;
+    const lv_coord_t eyeOffY = -dia / 5;
+    const lv_coord_t eyeS    = dia / 8;
     for (int side = -1; side <= 1; side += 2) {
         lv_obj_t *e = lv_obj_create(btn);
         lv_obj_remove_style_all(e);
         lv_obj_set_size(e, eyeS, eyeS);
         lv_obj_set_style_radius(e, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(e, lv_color_black(), 0);
+        lv_obj_set_style_bg_color(e, lv_color_white(), 0);
         lv_obj_set_style_bg_opa(e, LV_OPA_COVER, 0);
         lv_obj_align(e, LV_ALIGN_CENTER, side * eyeOffX, eyeOffY);
         lv_obj_clear_flag(e, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     }
 
-    // mouth: arc segment. Good = smile (U, angles 30..150), Bad = frown (^, 210..330)
+    // mouth: arc segment with white stroke. Good = smile, Bad = frown
     lv_obj_t *m = lv_arc_create(btn);
-    lv_obj_set_size(m, dia * 3 / 4, dia * 3 / 4);
-    lv_obj_align(m, LV_ALIGN_CENTER, 0, dia / 8);
+    lv_obj_set_size(m, dia * 2 / 3, dia * 2 / 3);
+    lv_obj_align(m, LV_ALIGN_CENTER, 0, dia / 6);
     lv_obj_set_style_arc_opa(m, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(m, dia / 14, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(m, lv_color_black(), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(m, dia / 12, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(m, lv_color_white(), LV_PART_INDICATOR);
     lv_obj_set_style_arc_opa(m, LV_OPA_COVER, LV_PART_INDICATOR);
-    lv_arc_set_angles(m, (ans == FEEDBACK_GOOD) ? 30 : 210,
-                          (ans == FEEDBACK_GOOD) ? 150 : 330);
+    lv_arc_set_angles(m, (ans == FEEDBACK_GOOD) ? 25 : 200,
+                          (ans == FEEDBACK_GOOD) ? 155 : 340);
     lv_obj_clear_flag(m, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     return btn;
 }
@@ -275,6 +279,8 @@ static void goto_choice(void) {
 
 // -- POP (expanding circle) ---------------------------------------------------
 static void pop_anim_exec(void *obj, int32_t v) {
+    // Keep circle centered at the tap point as it grows
+    lv_obj_set_pos((lv_obj_t *)obj, (lv_coord_t)(s.popTapX - v / 2), (lv_coord_t)(s.popTapY - v / 2));
     lv_obj_set_size((lv_obj_t *)obj, (lv_coord_t)v, (lv_coord_t)v);
 }
 
@@ -297,7 +303,7 @@ static void goto_pop(FeedbackAnswer ans, lv_coord_t tapX, lv_coord_t tapY) {
     extern void ui_set_hud_visible(bool);
     ui_set_hud_visible(false);
 
-    // Configure the expanding circle
+    // Full-screen expanding circle centered at tap point
     lv_color_t color = (ans == FEEDBACK_GOOD) ? COL_GREEN : COL_RED;
     if (!s.pop_circle) {
         s.pop_circle = lv_obj_create(s.v_pop);
@@ -309,12 +315,14 @@ static void goto_pop(FeedbackAnswer ans, lv_coord_t tapX, lv_coord_t tapY) {
     } else {
         lv_obj_set_style_bg_color(s.pop_circle, color, 0);
     }
-    // Position at tap point, start size 0
-    lv_obj_set_pos(s.pop_circle, (lv_coord_t)tapX, (lv_coord_t)tapY);
+    // Store tap point for centering, start size 0 at tap point
+    s.popTapX = tapX;
+    s.popTapY = tapY;
+    lv_obj_set_pos(s.pop_circle, tapX, tapY);
     lv_obj_set_size(s.pop_circle, 0, 0);
 
-    // Animate to cover screen: diagonal ~660px to guarantee full coverage
-    const int maxSize = (int)(SCREEN_W * 1.5f);
+    // Animate to cover entire screen: diagonal ~660px diameter guarantees full coverage
+    const int maxSize = 700;  // > diagonal (660px), covers whole screen from any tap
     lv_anim_init(&s.pop_anim);
     lv_anim_set_var(&s.pop_anim, s.pop_circle);
     lv_anim_set_exec_cb(&s.pop_anim, pop_anim_exec);
