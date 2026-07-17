@@ -192,6 +192,7 @@ static void goto_logo(void) {
 // -- CHOICE (green/red split) -------------------------------------------------
 static void choice_timeout_cb(lv_timer_t *) {
     if (s.st != ST_CHOICE) return;
+    s.t_choice = nullptr;           // LVGL already freed the timer
     FB_LOG("[fb] choice timeout -> LOGO (no answer)\n");
     goto_logo();
 }
@@ -296,15 +297,20 @@ static void goto_pop(FeedbackAnswer ans, lv_coord_t tapX, lv_coord_t tapY) {
 
     // Fallback timer in case anim doesn't fire ready_cb
     if (s.t_pop) { lv_timer_del(s.t_pop); s.t_pop = nullptr; }
-    s.t_pop = lv_timer_create([](lv_timer_t *) {
+    s.t_pop = lv_timer_create([](lv_timer_t *t) {
+        s.t_pop = nullptr;  // LVGL freed the one-shot
         if (s.st == ST_POP) pop_anim_ready(nullptr);
+        (void)t;
     }, FEEDBACK_POP_MS + 100, nullptr);
     lv_timer_set_repeat_count(s.t_pop, 1);
 }
 
 // -- QR (QR code on white tile) ------------------------------------------------
 static void qr_timeout_cb(lv_timer_t *) {
-    if (s.st == ST_QR) goto_logo_with_cooldown();
+    if (s.st == ST_QR) {
+        s.t_qr = nullptr;
+        goto_logo_with_cooldown();
+    }
 }
 
 static void qr_tap_cb(lv_event_t *) {
@@ -316,8 +322,10 @@ static void goto_logo_with_cooldown(void) {
     // Enable cooldown: absorb taps for cooldownMs
     s.cooldownActive = true;
     if (s.t_cooldown) { lv_timer_del(s.t_cooldown); s.t_cooldown = nullptr; }
-    s.t_cooldown = lv_timer_create([](lv_timer_t *) {
+    s.t_cooldown = lv_timer_create([](lv_timer_t *t) {
         s.cooldownActive = false;
+        s.t_cooldown = nullptr;  // LVGL freed the one-shot timer
+        (void)t;
     }, (uint32_t)s.cooldownMs, nullptr);
     lv_timer_set_repeat_count(s.t_cooldown, 1);
     goto_logo();
@@ -349,7 +357,11 @@ static void goto_qr(void) {
 // Admin overlay
 // =============================================================================
 static void admin_close_cb(lv_event_t *) { feedback_view::setAdminVisible(false); }
-static void admin_auto_close_cb(lv_timer_t *) { feedback_view::setAdminVisible(false); }
+static void admin_auto_close_cb(lv_timer_t *t) {
+    s.t_admin = nullptr;
+    feedback_view::setAdminVisible(false);
+    (void)t;
+}
 
 static void logo_longpress_cb(lv_event_t *e) {
     if (s.st != ST_LOGO) return;
