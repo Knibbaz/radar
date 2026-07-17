@@ -6,7 +6,8 @@
 #include "geo.h"                     // GPS distance check (haversine)
 #include "feedback_view.h"           // placeholder main canvas (was radar_view)
 #include "feedback_log.h"            // anonymous event log (ring + NVS counters + CSV + webhook)
-#include "stats_html.h"              // /stats + /api/stats renderers
+#include "stats_html.h"              // /api/stats JSON renderer
+#include "web_pages.h"               // HTML dashboard page
 #include "ui.h"
 #include "display.h"                  // M0: CO5300 + LVGL bring-up
 #include "imu_qmi8658.h"             // face-down sleep
@@ -22,6 +23,9 @@
 #include <ESPmDNS.h>                // http://capsuleradar.local
 #include <ArduinoOTA.h>             // OTA firmware update over WiFi (PlatformIO/espota)
 #include <Update.h>                 // browser OTA: self-flash an uploaded .bin
+#if defined(ESP_PLATFORM)
+#  include <SPIFFS.h>               // logo storage
+#endif
 #include <esp_heap_caps.h>          // largest-free-block metric (heap health)
 #include <esp_wifi.h>               // WiFi driver control (reset must survive the reboot)
 #include <nvs.h>                    // erase the driver's "nvs.net80211" namespace (WiFi reset)
@@ -32,19 +36,8 @@ static WiFiManager           g_wm;
 static int                   g_brightnessDay = BRIGHTNESS_DEFAULT;   // user brightness (web/NVS)
 static int                   g_volume = 60;                          // alert volume 0..100 (web/NVS)
 static bool                  g_muted  = false;                       // mute alert pings
-static int                   g_alertMode = 2;                        // 0=off 1=emergencies 2=new+emergencies (web/NVS)
-static float                 g_proximityKm = 0.0f;                   // proximity alert radius, km (0=off) (web/NVS)
 static uint32_t              g_idleDimMs = IDLE_DIM_MS;              // dim after this idle time (0 = never)
-static bool                  g_showSweep = true;                     // rotating sweep line on/off (web/NVS)
-static int                   g_units = 0;                            // 0=Aviation 1=Metric 2=Imperial (web/NVS)
-static bool                  g_showAirports = true;                  // airport markers on/off (web/NVS)
-static bool                  g_hideGround   = false;                 // skip on-ground aircraft in the feed (web/NVS)
-static int                   g_minAltFt     = 0;                     // only show aircraft above this altitude, ft (0 = off) (web/NVS)
-static bool                  g_milOnly      = false;                 // only show military-flagged aircraft (web/NVS)
 static int                   g_rotation = 0;                         // display rotation 0/1/2/3 = 0/90/180/270 (web/NVS)
-static bool                  g_useGps = false;                       // auto-set home from the LC76G GPS (-G variant) (web/NVS)
-static int                   g_trailLen = 2;                         // aircraft trails 0=off 1=short 2=med 3=long (web/NVS)
-static int                   g_maxAc = 20;                           // max aircraft drawn on the scope (web/NVS)
 static volatile bool         g_onBattery = false;                    // discharging (set on core 1, read on core 0)
 static bool                  g_rtcSynced = false;                    // RTC written from NTP this session?
 static volatile uint32_t     g_rebootAtMs = 0;                       // !=0: reboot when millis() reaches it (clean start after WiFi config)
@@ -83,13 +76,7 @@ static void loadSettings() {
     g_brightnessDay    = p.getInt("bright", BRIGHTNESS_DEFAULT);
     g_volume           = p.getInt("vol", 60);
     g_muted            = p.getBool("mute", false);
-    g_alertMode        = p.getInt("alertmode", 2);
-    g_proximityKm      = p.getFloat("proxkm", 0.0f);
-    g_useGps           = p.getBool("usegps", false);
-    g_trailLen         = p.getInt("traillen", 2);
-    g_maxAc            = p.getInt("maxac", 20);
     g_idleDimMs        = p.getUInt("idledim", IDLE_DIM_MS);
-    g_units            = p.getInt("units", 0);
     g_tz               = p.getString("tz", TZ_STR);
     p.end();
 }
@@ -201,6 +188,15 @@ static void handleRoot() {
         "<button type=button class=sec onclick=\"location.href='/stats'\">Open operator dashboard &rarr;</button>"
         "</div>"
 
+        // ----- Logo -----
+        "<div class=card><div class=t>Logo</div>"
+        "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>Upload a PNG logo (max 200 KB, recommended 300x300).</p>"
+        "<form method=POST action=/logo enctype=multipart/form-data>"
+        "<input type=file name=logo accept='.png' required>"
+        "<button>Upload logo</button></form>"
+        "<form method=POST action=/logo-remove>"
+        "<button class=w style='margin-top:8px'>Remove logo</button></form></div>"
+
         // ----- Network -----
         "<div class=card><div class=t>Network</div>"
         "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>Forget the saved WiFi and reopen the setup portal.</p>"
@@ -250,7 +246,7 @@ static void handleSave() {
 
 static void handleStatsPage() {
     char buf[8192];
-    const int n = stats_html::render_html(buf, sizeof(buf));
+    const int n = web_pages::render_stats_html(buf, sizeof(buf));
     if (n <= 0) { g_web.send(500, "text/plain", "render failed"); return; }
     g_web.send(200, "text/html", buf);
 }
@@ -375,185 +371,6 @@ static void handleBright() {
     g_web.send(200, "text/plain", "ok");
 }
 
-static void handleVol() {
-    if (g_web.hasArg("v"))    { g_volume = constrain((int)g_web.arg("v").toInt(), 0, 100); audio_set_volume(g_volume); }
-    if (g_web.hasArg("mute")) { g_muted = g_web.arg("mute").toInt() != 0; audio_set_muted(g_muted); }
-    if (g_web.hasArg("save")) {
-        Preferences p;
-        p.begin("capsuleradar", false);
-        p.putInt("vol", g_volume);
-        p.putBool("mute", g_muted);
-        p.end();
-    }
-    if (g_web.hasArg("test")) {
-        if (g_web.arg("test").toInt() == 2) audio_selftest();   // long tone, ignores mute
-        else audio_play(AUDIO_NEW);
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleAlerts() {   // what triggers the alert sound (live)
-    if (g_web.hasArg("mode")) g_alertMode   = constrain((int)g_web.arg("mode").toInt(), 0, 2);
-    if (g_web.hasArg("prox")) g_proximityKm = g_web.arg("prox").toFloat();   // km (0 = off)
-    if (g_web.hasArg("save")) {
-        Preferences p;
-        p.begin("capsuleradar", false);
-        p.putInt("alertmode", g_alertMode);
-        p.putFloat("proxkm", g_proximityKm);
-        p.end();
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleIdle() {   // idle auto-dim timeout (seconds; 0 = never)
-    if (g_web.hasArg("v")) {
-        const long s = g_web.arg("v").toInt();
-        g_idleDimMs = (s <= 0) ? 0 : (uint32_t)s * 1000;
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putUInt("idledim", g_idleDimMs);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleUnits() {   // measurement units preset (live re-render)
-    if (g_web.hasArg("v")) {
-        g_units = constrain((int)g_web.arg("v").toInt(), 0, 2);
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putInt("units", g_units);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleSweep() {   // show/hide the rotating sweep line (live)
-    if (g_web.hasArg("v")) {
-        g_showSweep = g_web.arg("v").toInt() != 0;
-        feedback_view::setSweepEnabled(g_showSweep);  // no-op stub (radar-era knob)
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putBool("sweep", g_showSweep);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleTrail() {   // aircraft trail length 0/1/2/3 (live)
-    if (g_web.hasArg("v")) {
-        g_trailLen = constrain((int)g_web.arg("v").toInt(), 0, 3);
-        feedback_view::setTrailLength(g_trailLen);
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putInt("traillen", g_trailLen);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleAltMin() {   // minimum-altitude feed filter, ft (applies from the next poll)
-    if (g_web.hasArg("v")) {
-        g_minAltFt = constrain((int)g_web.arg("v").toInt(), 0, 60000);
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putInt("minalt", g_minAltFt);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleMilOnly() {   // military-only feed filter (applies from the next poll)
-    if (g_web.hasArg("v")) {
-        g_milOnly = g_web.arg("v").toInt() != 0;
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putBool("milonly", g_milOnly);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleMaxAc() {   // max aircraft drawn on the scope (live)
-    if (g_web.hasArg("v")) {
-        g_maxAc = constrain((int)g_web.arg("v").toInt(), 1, ADSB_MAX_AIRCRAFT);
-        feedback_view::setMaxOnScreen(g_maxAc);
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putInt("maxac", g_maxAc);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleAirports() {   // show/hide airport markers (live)
-    if (g_web.hasArg("v")) {
-        g_showAirports = g_web.arg("v").toInt() != 0;
-        feedback_view::setAirportsEnabled(g_showAirports);
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putBool("airports", g_showAirports);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleGround() {   // hide/show on-ground aircraft (applies from the next feed poll)
-    if (g_web.hasArg("v")) {
-        g_hideGround = g_web.arg("v").toInt() != 0;
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putBool("hideground", g_hideGround);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleRotate() {   // display rotation 0/90/180/270 for any USB-C orientation (live)
-    if (g_web.hasArg("v")) {
-        g_rotation = constrain((int)g_web.arg("v").toInt(), 0, 3);
-        display::setRotation((uint8_t)g_rotation);
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putInt("rot", g_rotation);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
-static void handleGps() {   // auto-set the centre point from the LC76G GPS (-G variant)
-    if (g_web.hasArg("v")) {
-        g_useGps = g_web.arg("v").toInt() != 0;
-        if (g_web.hasArg("save")) {
-            Preferences p;
-            p.begin("capsuleradar", false);
-            p.putBool("usegps", g_useGps);
-            p.end();
-        }
-    }
-    g_web.send(200, "text/plain", "ok");
-}
-
 // ---- browser OTA: upload an app .bin over WiFi and self-flash ----
 static void handleUpdatePage() {
     g_web.send(200, "text/html",
@@ -598,6 +415,40 @@ static void handleUpdateUpload() {
     }
 }
 
+// ---- logo upload / remove --------------------------------------------------
+static void handleLogoUpload() {
+    HTTPUpload &up = g_web.upload();
+    if (up.status == UPLOAD_FILE_START) {
+        Serial.printf("[logo] start: %s (%u bytes)\n", up.filename.c_str(), (unsigned)up.totalSize);
+        if (up.totalSize > 200 * 1024) {
+            Serial.println("[logo] too large (>200KB), rejecting");
+            return;
+        }
+#if defined(ESP_PLATFORM)
+        // Remove existing logo file
+        if (SPIFFS.exists("/logo.png")) SPIFFS.remove("/logo.png");
+#endif
+    } else if (up.status == UPLOAD_FILE_WRITE) {
+#if defined(ESP_PLATFORM)
+        File f = SPIFFS.open("/logo.png", FILE_APPEND);
+        if (f) { f.write(up.buf, up.currentSize); f.close(); }
+#endif
+    } else if (up.status == UPLOAD_FILE_END) {
+        Serial.printf("[logo] done: %u bytes\n", (unsigned)up.totalSize);
+        feedback_view::loadLogo();
+        g_web.send(200, "text/html",
+            "<meta http-equiv=refresh content='2;url=/'><body style='background:#06100a;color:#1dff86;"
+            "font-family:sans-serif;padding:24px'>Logo uploaded.</body>");
+    }
+}
+
+static void handleLogoRemove() {
+    feedback_view::removeLogo();
+    g_web.send(200, "text/html",
+        "<meta http-equiv=refresh content='2;url=/'><body style='background:#06100a;color:#ff5a3c;"
+        "font-family:sans-serif;padding:24px'>Logo removed.</body>");
+}
+
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -621,6 +472,15 @@ void setup() {
         feedback_log::applySettings(fbset);
     }
 
+    // --- SPIFFS (logo storage) ---------------------------------------------
+#if defined(ESP_PLATFORM)
+    if (!SPIFFS.begin(true)) {
+        Serial.println("[spiffs] mount failed");
+    } else {
+        Serial.println("[spiffs] mounted");
+    }
+#endif
+
     // --- Display + LVGL (M0) ----------------------------------------------
     // CO5300 AMOLED over QSPI + LVGL draw buffers in PSRAM, then a hello screen.
     // The panel is powered from the always-on DC1 rail, so it lights without the
@@ -634,18 +494,9 @@ void setup() {
         Preferences p;
         p.begin("capsuleradar", true);
         const int t = p.getInt("theme", FEEDBACK_THEME_PHOSPHOR);
-        g_showSweep = p.getBool("sweep", true);
-        g_showAirports = p.getBool("airports", true);
-        g_hideGround = p.getBool("hideground", false);
-        g_minAltFt = p.getInt("minalt", 0);
-        g_milOnly = p.getBool("milonly", false);
         g_rotation = p.getInt("rot", 0);
         p.end();
         feedback_view::setTheme(t);
-        feedback_view::setSweepEnabled(g_showSweep);
-        feedback_view::setAirportsEnabled(g_showAirports);
-        feedback_view::setTrailLength(g_trailLen);
-        feedback_view::setMaxOnScreen(g_maxAc);
         display::setRotation((uint8_t)g_rotation);
     }
     feedback_view::setThemeChangedCb(saveTheme);
@@ -724,19 +575,8 @@ void setup() {
     g_web.on("/cooldown", handleCooldown);
     g_web.on("/wifi", HTTP_POST, handleWifi);
     g_web.on("/bright", handleBright);
-    g_web.on("/vol", handleVol);
-    g_web.on("/alerts", handleAlerts);
-    g_web.on("/idle", handleIdle);
-    g_web.on("/sweep", handleSweep);
-    g_web.on("/airports", handleAirports);
-    g_web.on("/ground", handleGround);
-    g_web.on("/altmin", handleAltMin);
-    g_web.on("/milonly", handleMilOnly);
-    g_web.on("/trail", handleTrail);
-    g_web.on("/maxac", handleMaxAc);
-    g_web.on("/rotate", handleRotate);
-    g_web.on("/gps", handleGps);
-    g_web.on("/units", handleUnits);
+    g_web.on("/logo", HTTP_POST, []() { g_web.send(200, "text/plain", "OK"); }, handleLogoUpload);
+    g_web.on("/logo-remove", HTTP_POST, handleLogoRemove);
     g_web.on("/update", HTTP_GET, handleUpdatePage);
     g_web.on("/update", HTTP_POST,
         []() {
@@ -828,7 +668,7 @@ void loop() {
         // live admin-overlay counters (from the persistent 31-day NVS table)
         {
             const feedback_log::DayCount tc = feedback_log::day(0);
-            feedback_view::setAdminToday(tc.good, tc.neutral, tc.bad);
+            feedback_view::setAdminToday(tc.good, tc.bad);
         }
         const bool bpresent = battery_present();
         ui_set_battery(battery_percent(), battery_charging(), bpresent);
