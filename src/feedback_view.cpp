@@ -74,9 +74,8 @@ struct S {
     lv_obj_t *qr_widget   = nullptr;
     lv_timer_t *t_qr      = nullptr;   // 12s auto-return
 
-    // Cooldown — absorb taps silently after returning to LOGO
+    // Cooldown — absorb taps silently with progress arc
     bool       cooldownActive = false;
-    lv_timer_t *t_cooldown = nullptr;
 
     // Live-tunable settings
     int mode            = 0;          // 0=REVIEW, 1=DASHBOARD
@@ -90,6 +89,10 @@ struct S {
     lv_obj_t *lbl_ip      = nullptr;
     lv_obj_t *lbl_url     = nullptr;
     lv_timer_t *t_admin   = nullptr;
+
+    // Cooldown arc (progress ring on LOGO)
+    lv_obj_t      *arc_cd  = nullptr;
+    lv_anim_t      a_cd;
 
     // Touch debounce — prevent double-tap on CHOICE
     bool tapped = false;
@@ -150,6 +153,30 @@ static lv_obj_t *make_smiley(lv_obj_t *parent, FeedbackAnswer ans,
 }
 
 // =============================================================================
+// Cooldown arc (progress ring on LOGO)
+// =============================================================================
+static void arc_cd_exec(void *obj, int32_t v) {
+    lv_arc_set_angles((lv_obj_t *)obj, 0, (uint16_t)v);
+}
+static void arc_cd_ready(lv_anim_t *) {
+    if (s.arc_cd) lv_obj_add_flag(s.arc_cd, LV_OBJ_FLAG_HIDDEN);
+    s.cooldownActive = false;
+}
+static void start_cd_anim(void) {
+    if (!s.arc_cd) return;
+    lv_anim_init(&s.a_cd);
+    lv_anim_set_var(&s.a_cd, s.arc_cd);
+    lv_anim_set_exec_cb(&s.a_cd, arc_cd_exec);
+    lv_anim_set_values(&s.a_cd, 0, 360);
+    lv_anim_set_time(&s.a_cd, (uint32_t)s.cooldownMs);
+    lv_anim_set_path_cb(&s.a_cd, lv_anim_path_linear);
+    lv_anim_set_ready_cb(&s.a_cd, arc_cd_ready);
+    lv_anim_start(&s.a_cd);
+    lv_obj_clear_flag(s.arc_cd, LV_OBJ_FLAG_HIDDEN);
+    lv_arc_set_angles(s.arc_cd, 0, 0);
+}
+
+// =============================================================================
 // State transitions
 // =============================================================================
 
@@ -182,6 +209,8 @@ static void goto_logo(void) {
     if (s.v_pop)    lv_obj_add_flag(s.v_pop, LV_OBJ_FLAG_HIDDEN);
     if (s.v_qr)     lv_obj_add_flag(s.v_qr, LV_OBJ_FLAG_HIDDEN);
     if (s.v_logo)   lv_obj_clear_flag(s.v_logo, LV_OBJ_FLAG_HIDDEN);
+    // Hide cooldown arc (will be shown by start_cd_anim if needed)
+    if (s.arc_cd)   lv_obj_add_flag(s.arc_cd, LV_OBJ_FLAG_HIDDEN);
     // Show HUD on LOGO
     extern void ui_set_hud_visible(bool);
     ui_set_hud_visible(true);
@@ -319,16 +348,10 @@ static void qr_tap_cb(lv_event_t *) {
 
 static void goto_logo_with_cooldown(void) {
     if (s.st == ST_COOLDOWN || s.st == ST_LOGO) return;
-    // Enable cooldown: absorb taps for cooldownMs
     s.cooldownActive = true;
-    if (s.t_cooldown) { lv_timer_del(s.t_cooldown); s.t_cooldown = nullptr; }
-    s.t_cooldown = lv_timer_create([](lv_timer_t *t) {
-        s.cooldownActive = false;
-        s.t_cooldown = nullptr;  // LVGL freed the one-shot timer
-        (void)t;
-    }, (uint32_t)s.cooldownMs, nullptr);
-    lv_timer_set_repeat_count(s.t_cooldown, 1);
     goto_logo();
+    // Show progress arc on LOGO during cooldown
+    start_cd_anim();
 }
 
 static void rebuild_qr(void) {
@@ -677,6 +700,21 @@ void init(void *lv_parent) {
     lv_obj_set_style_text_font(closeLbl, &lv_font_montserrat_16, 0);
     lv_obj_center(closeLbl);
     lv_obj_add_event_cb(close, admin_close_cb, LV_EVENT_CLICKED, nullptr);
+
+    // ==================== Cooldown arc (progress ring on LOGO) ====================
+    s.arc_cd = lv_arc_create(s.root);
+    lv_obj_set_size(s.arc_cd, 432, 432);
+    lv_obj_align(s.arc_cd, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_arc_color(s.arc_cd, COL_GREEN, LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(s.arc_cd, 50,  LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s.arc_cd, 4,  LV_PART_MAIN);
+    lv_obj_set_style_arc_color(s.arc_cd, COL_GREEN, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_opa(s.arc_cd, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(s.arc_cd, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(s.arc_cd, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_arc_set_angles(s.arc_cd, 0, 0);
+    lv_obj_clear_flag(s.arc_cd, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s.arc_cd, LV_OBJ_FLAG_HIDDEN);
 
     // Start in LOGO state
     goto_logo();
