@@ -21,6 +21,7 @@
 static lv_obj_t *s_hudWifi = nullptr, *s_hudClock = nullptr,
                 *s_hudBatt = nullptr, *s_hudDate = nullptr;
 static lv_obj_t *s_hudBars[4] = { nullptr, nullptr, nullptr, nullptr };   // WiFi signal-strength bars
+static bool      s_hudVisible = true;
 
 // --------------------------------------------------------------------- HUD
 // Bar count from RSSI (dBm): the weaker the signal, the fewer lit bars.
@@ -60,6 +61,15 @@ void ui_set_date(const char *date) {
 }
 
 void ui_set_netinfo(const char *) { /* Stats tile is gone; main.cpp's loop still calls this. */ }
+
+void ui_set_hud_visible(bool visible) {
+    s_hudVisible = visible;
+    const lv_opa_t opa = visible ? LV_OPA_COVER : LV_OPA_TRANSP;
+    if (s_hudWifi)  lv_obj_set_style_opa(s_hudWifi, opa, 0);
+    if (s_hudClock) lv_obj_set_style_opa(s_hudClock, opa, 0);
+    if (s_hudBatt)  lv_obj_set_style_opa(s_hudBatt, opa, 0);
+    if (s_hudDate)  lv_obj_set_style_opa(s_hudDate, opa, 0);
+}
 
 // The terminal doesn't use GPS; main.cpp's loop still calls this. No-op.
 void ui_set_gps(int, int) {
