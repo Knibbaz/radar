@@ -75,6 +75,10 @@ void ui_show_view(int)                  {}
 void ui_on_data_updated(void)           {}
 
 // ------------------------------------------------------------------- splash
+// Neutral "Feedback" boot splash. No radar-era sweep / concentric rings —
+// just a centered smiley glyph + brand text, then a soft fade-out. The
+// splash is shown on top of the active screen while the feedback view is
+// being built, so it must not assume the view exists yet.
 static void splash_fade_cb(void *obj, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)v, 0); }
 static void splash_del_cb(lv_anim_t *a) { lv_obj_del((lv_obj_t *)a->var); }
 
@@ -100,41 +104,40 @@ void ui_splash_show(void) {
     lv_obj_set_style_bg_opa(cont, LV_OPA_COVER, 0);
     lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
 
-    // concentric rings
-    const lv_coord_t dia[3] = { 210, 142, 78 };
-    const lv_opa_t   op[3]  = { 90, 120, 160 };
-    for (int i = 0; i < 3; ++i) {
-        lv_obj_t *r = lv_obj_create(cont);
-        lv_obj_remove_style_all(r);
-        lv_obj_set_size(r, dia[i], dia[i]);
-        lv_obj_align(r, LV_ALIGN_CENTER, 0, -8);
-        lv_obj_set_style_radius(r, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_color(r, UI_GREEN, 0);
-        lv_obj_set_style_border_opa(r, op[i], 0);
-        lv_obj_set_style_border_width(r, 2, 0);
-        lv_obj_clear_flag(r, LV_OBJ_FLAG_SCROLLABLE);
-    }
-    // rotating sweep
-    lv_obj_t *sweep = lv_spinner_create(cont, 1400, 55);
-    lv_obj_set_size(sweep, 210, 210);
-    lv_obj_align(sweep, LV_ALIGN_CENTER, 0, -8);
-    lv_obj_set_style_arc_opa(sweep, 0, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(sweep, UI_GREEN, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(sweep, 4, LV_PART_INDICATOR);
+    // Soft phosphor-green disc as a brand mark (no radar sweep, no rings).
+    lv_obj_t *disc = lv_obj_create(cont);
+    lv_obj_remove_style_all(disc);
+    lv_obj_set_size(disc, 180, 180);
+    lv_obj_align(disc, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_set_style_radius(disc, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(disc, UI_GREEN, 0);
+    lv_obj_set_style_bg_opa(disc, 35, 0);                       // dim fill, not a solid block
+    lv_obj_set_style_border_color(disc, UI_GREEN, 0);
+    lv_obj_set_style_border_opa(disc, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(disc, 3, 0);
+    lv_obj_clear_flag(disc, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Smiley glyph (LV_SYMBOL's "smile" is a face; we use OK for a clean tick
+    // since the splash is brand-only, not a preview of the rating UI).
+    lv_obj_t *mark = lv_label_create(cont);
+    lv_label_set_text(mark, LV_SYMBOL_OK);
+    lv_obj_set_style_text_font(mark, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(mark, UI_GREEN, 0);
+    lv_obj_align(mark, LV_ALIGN_CENTER, 0, -30);
 
     lv_obj_t *title = lv_label_create(cont);
     lv_label_set_text(title, "FEEDBACK");
     lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(title, UI_GREEN, 0);
-    lv_obj_align(title, LV_ALIGN_CENTER, 0, 110);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, 90);
 
     lv_obj_t *sub = lv_label_create(cont);
-    lv_label_set_text(sub, "Tap a smiley to start");
+    lv_label_set_text(sub, "Customer feedback terminal");
     lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(sub, UI_SOFT, 0);
-    lv_obj_align(sub, LV_ALIGN_CENTER, 0, 142);
+    lv_obj_align(sub, LV_ALIGN_CENTER, 0, 122);
 
-    lv_timer_t *t = lv_timer_create(splash_dismiss_cb, 2200, cont);   // hold, then fade out
+    lv_timer_t *t = lv_timer_create(splash_dismiss_cb, 1800, cont);   // hold, then fade out
     lv_timer_set_repeat_count(t, 1);
 }
 
