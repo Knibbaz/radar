@@ -95,6 +95,7 @@
 #define LV_USE_LIST 1
 #define LV_USE_TILEVIEW 1
 #define LV_USE_QRCODE 1              // feedback QR codes (src/feedback_view.cpp)
+#define LV_USE_PNG 1                 // logo decode from LittleFS (LOGO state)
 
 #endif /* LV_CONF_H */
 #endif /* Enable content */

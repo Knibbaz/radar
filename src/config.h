@@ -41,25 +41,26 @@ static const float RANGE_STEPS_KM[] = {10.0f, 20.0f, 30.0f, 50.0f, 100.0f};
 #define ADSB_HTTPS_INSECURE 1               // 1 = setInsecure() (hobby). 0 = use pinned root CA.
 #define ADSB_MAX_AIRCRAFT   60              // hard cap parsed per poll (protect RAM in busy areas)
 
-// ---------- Feedback (smileys -> QR codes) ----------------------------
-// Dutch by default; the operator's web config page will let them change the
-// question text + the two URLs later. URLs are placeholders for now.
+// ---------- Feedback kiosk: LOGO -> CHOICE -> POP -> QR -> LOGO ----------
 #define FEEDBACK_QUESTION         "Hoe was uw bezoek?"
 #define FEEDBACK_URL_REVIEW       "https://g.page/r/PLACEHOLDER-REVIEW"
 #define FEEDBACK_URL_INTERNAL     "https://feedback.local/form"
-#define FEEDBACK_THANKS_MS        1500        // "Bedankt" overlay duration
-#define FEEDBACK_QR_MS            12000       // QR screen auto-returns to IDLE
-#define FEEDBACK_COOLDOWN_MS      4000        // tap-absorb window after each interaction
-#define FEEDBACK_SMILEY_DIA       110         // visual diameter of each smiley (px)
-#define FEEDBACK_HITBOX_MIN       120         // minimum touch hit box per smiley (px)
+#define FEEDBACK_POP_MS           400         // expanding circle animation duration
+#define FEEDBACK_QR_MS            12000       // QR screen auto-returns to LOGO
+#define FEEDBACK_CHOICE_TIMEOUT_MS 10000      // 10 s idle on CHOICE -> back to LOGO
+#define FEEDBACK_SMILEY_DIA       140         // visual diameter of each smiley (px)
+#define FEEDBACK_HITBOX_MIN       150         // minimum touch hit box per smiley (px)
+#define FEEDBACK_IDLE_BRIGHTNESS  15          // LOGO screen brightness % (0..100)
+#define FEEDBACK_LOGO_DRIFT_PX    8           // logo drift range +-px (burn-in protection)
+#define FEEDBACK_LOGO_DRIFT_MS    30000       // logo drift interval ms
 #define FEEDBACK_WEBHOOK_URL      ""          // placeholder; web UI configures later
-#define FEEDBACK_FLUSH_INTERVAL_S 30          // NVS daily-counter write throttle (also flushed on QR transition)
-#define FEEDBACK_ADMIN_LONGPRESS_MS 3000      // hold time on IDLE to open the on-device admin overlay
-#define FEEDBACK_ADMIN_PING_MS     10000      // auto-dismiss the admin overlay after this much idle
+#define FEEDBACK_FLUSH_INTERVAL_S 30          // NVS daily-counter write throttle
+#define FEEDBACK_COOLDOWN_MS      2000        // post-QR tap-absorb window ms
+#define FEEDBACK_ADMIN_LONGPRESS_MS 3000      // hold time on LOGO to open admin overlay
+#define FEEDBACK_ADMIN_PING_MS     10000      // auto-dismiss admin overlay
 
 // ---------- Kiosk operator settings (NVS namespace "kiosk") ----------
-// Mode: 0 = REVIEW (kapper: show QR for GOOD / internal + review for NEUTRAL+BAD),
-//       1 = DASHBOARD (wachtkamer: after THANKS go straight back to IDLE; never show any QR).
+// Mode: 0 = REVIEW (show QR after POP), 1 = DASHBOARD (skip QR, POP -> LOGO).
 #define FEEDBACK_DEFAULT_MODE     0
 #define FEEDBACK_DEFAULT_COOLDOWN 4000        // ms (overridable via /save in range 2..30 s)
 #define FEEDBACK_QUESTION_DEF     "Hoe was uw bezoek?"
