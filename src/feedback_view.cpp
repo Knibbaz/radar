@@ -167,13 +167,13 @@ static void start_cd_anim(void) {
     lv_anim_init(&s.a_cd);
     lv_anim_set_var(&s.a_cd, s.arc_cd);
     lv_anim_set_exec_cb(&s.a_cd, arc_cd_exec);
-    lv_anim_set_values(&s.a_cd, 0, 360);
+    lv_anim_set_values(&s.a_cd, 360, 0);   // full → empty (drains as time passes)
     lv_anim_set_time(&s.a_cd, (uint32_t)s.cooldownMs);
     lv_anim_set_path_cb(&s.a_cd, lv_anim_path_linear);
     lv_anim_set_ready_cb(&s.a_cd, arc_cd_ready);
     lv_anim_start(&s.a_cd);
     lv_obj_clear_flag(s.arc_cd, LV_OBJ_FLAG_HIDDEN);
-    lv_arc_set_angles(s.arc_cd, 0, 0);
+    lv_arc_set_angles(s.arc_cd, 0, 360);  // start full
 }
 
 // =============================================================================
