@@ -6,6 +6,7 @@
 #include "geo.h"                     // GPS distance check (haversine)
 #include "feedback_view.h"           // placeholder main canvas (was radar_view)
 #include "feedback_log.h"            // anonymous event log (ring + NVS counters + CSV + webhook)
+#include <ArduinoJson.h>             // remote config JSON parsing
 #include "stats_html.h"              // /api/stats JSON renderer
 #include "web_pages.h"               // HTML dashboard page
 #include "ui.h"
@@ -20,6 +21,8 @@
 #include <Preferences.h>            // NVS (persist theme/settings)
 #include <time.h>                   // NTP/RTC clock + date
 #include <WebServer.h>              // configuration web page
+#include <WiFiClientSecure.h>       // HTTPS for remote config fetch
+#include <HTTPClient.h>             // HTTP requests for remote config fetch
 #include <ESPmDNS.h>                // http://capsuleradar.local
 #include <ArduinoOTA.h>             // OTA firmware update over WiFi (PlatformIO/espota)
 #include <Update.h>                 // browser OTA: self-flash an uploaded .bin
@@ -30,6 +33,13 @@
 #include <esp_wifi.h>               // WiFi driver control (reset must survive the reboot)
 #include <nvs.h>                    // erase the driver's "nvs.net80211" namespace (WiFi reset)
 #include <esp_task_wdt.h>           // watchdog for the UI loop (auto-reset on hang)
+
+// ---- forward declarations for auth + remote config ----
+static bool     checkAuth();
+static void     requireAuth();
+static void     loadPassword();
+static void     fetchRemoteConfig();
+static void     loadRemoteConfigSettings();
 
 // ---- shared state ----
 static WiFiManager           g_wm;
@@ -42,6 +52,13 @@ static volatile bool         g_onBattery = false;                    // discharg
 static bool                  g_rtcSynced = false;                    // RTC written from NTP this session?
 static volatile uint32_t     g_rebootAtMs = 0;                       // !=0: reboot when millis() reaches it (clean start after WiFi config)
 static String                g_tz = TZ_STR;                          // POSIX timezone (web-configurable, NVS); applied via configTzTime
+static String                g_adminPass;                            // admin password (NVS "kiosk"/"pass")
+static bool                  g_passLoaded = false;                   // loaded password from NVS once?
+static int                   g_remoteVersion = 0;                    // last applied remote config version
+static uint32_t              g_remoteLastFetch = 0;                  // millis() of last remote fetch
+static uint32_t              g_remoteIntervalMs = REMOTE_CONFIG_INTERVAL_MS;
+static String                g_remoteUrl;                            // remote config URL (NVS "kiosk"/"remurl")
+static String                g_remoteToken;                          // remote config Bearer token (NVS "kiosk"/"remtok")
 
 // Web-selectable time zones (label + POSIX TZ). The <option> value is the index; the save
 // handler maps it back to the POSIX string stored in NVS and used by configTzTime at boot.
@@ -123,6 +140,32 @@ static void applyBrightness() {
 static WebServer g_web(80);
 
 static void handleRoot() {
+    loadPassword();
+    // First boot: no password set — force the user to create one
+    if (g_adminPass.length() == 0) {
+        g_web.send(200, "text/html",
+            "<!DOCTYPE html><html><head><meta charset=utf-8>"
+            "<meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<title>Set Password</title><style>"
+            "body{background:#06100a;color:#cdd6d1;font-family:system-ui,sans-serif;margin:0 auto;padding:20px;max-width:420px;min-height:100vh}"
+            "h1{color:#1dff86;font-size:20px}label{display:block;margin:12px 0 4px;color:#9affc8;font-size:13px}"
+            "input{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #2a4a39;background:#0c1a12;color:#eafff3;font-size:16px}"
+            "button{margin-top:16px;width:100%;padding:12px;border:0;border-radius:8px;background:#1dff86;color:#04140b;font-weight:700;font-size:16px}"
+            ".card{background:rgba(10,20,14,.85);border:1px solid #1f3a2b;border-radius:14px;padding:16px;margin-bottom:14px}"
+            "</style></head><body>"
+            "<h1>Welcome</h1><div class=card>"
+            "<p style='color:#9affc8;font-size:13px'>Before you can configure the kiosk, set an admin password. "
+            "The password protects the configuration page, OTA updates, and logo upload. "
+            "The dashboard and stats stay public.</p>"
+            "<form method=POST action=/setpass>"
+            "<label>Password</label><input name=p type=password minlength=4 required>"
+            "<label>Confirm</label><input name=p2 type=password minlength=4 required>"
+            "<button>Set password</button></form></div></body></html>");
+        return;
+    }
+    requireAuth();
+    if (!checkAuth()) return;  // 401 already sent
+
     feedback_log::Settings st;
     feedback_log::loadSettings(st);
 
@@ -217,6 +260,26 @@ static void handleRoot() {
         "}"
         "</script>"
 
+        // ----- Remote config (pull model) -----
+        "<div class=card><div class=t>Remote config</div>"
+        "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>The device fetches config from a URL at boot and every 6 hours. "
+        "Only whitelisted fields (URLs, question, cooldown, mode) are applied when version increases.</p>"
+        "<form method=POST action=/save-remote>"
+        "<label>Remote config URL (HTTPS JSON)</label>"
+        "<input name=remurl type=url value='%s'>"
+        "<label>Bearer token (optional)</label>"
+        "<input name=remtok type=text value='%s'>"
+        "<button>Save remote config</button></form>"
+        "<p style='color:#5f7a6c;font-size:11px;margin:8px 0 0'>"
+        "Last version: <b>%d</b> &middot; last fetch: <b>%s</b></p></div>"
+
+        // ----- Password -----
+        "<div class=card><div class=t>Admin password</div>"
+        "<form method=POST action=/setpass>"
+        "<label>New password</label><input name=p type=password minlength=4>"
+        "<label>Confirm</label><input name=p2 type=password minlength=4>"
+        "<button>Change password</button></form></div>"
+
         // ----- Network -----
         "<div class=card><div class=t>Network</div>"
         "<p style='color:#9affc8;font-size:13px;margin:0 0 4px'>Forget the saved WiFi and reopen the setup portal.</p>"
@@ -229,11 +292,15 @@ static void handleRoot() {
         st.mode == 0 ? " selected" : "", st.mode == 1 ? " selected" : "",
         q, rev, rin, whk,
         cd_s, cd_s,
-        g_brightnessDay);
+        g_brightnessDay,
+        g_remoteUrl.c_str(), g_remoteToken.c_str(),
+        g_remoteVersion,
+        g_remoteLastFetch > 0 ? "now" : "-");
     g_web.send(200, "text/html", buf);
 }
 
 static void handleSave() {
+    requireAuth(); if (!checkAuth()) return;
     feedback_log::Settings st;
     feedback_log::loadSettings(st);
 
@@ -280,6 +347,7 @@ static void handleStatsApi() {
 
 // /webhook?v=<url>&save=1   (live; no /save needed)
 static void handleWebhookUrl() {
+    requireAuth(); if (!checkAuth()) return;
     if (g_web.hasArg("v")) {
         feedback_log::Settings st;
         feedback_log::loadSettings(st);
@@ -293,6 +361,7 @@ static void handleWebhookUrl() {
 
 // /mode?v=0|1&save=1
 static void handleMode() {
+    requireAuth(); if (!checkAuth()) return;
     if (g_web.hasArg("v")) {
         feedback_log::Settings st;
         feedback_log::loadSettings(st);
@@ -305,6 +374,7 @@ static void handleMode() {
 
 // /q?v=<text>&save=1  (live; truncated to FEEDBACK_MAX_QUESTION)
 static void handleQuestion() {
+    requireAuth(); if (!checkAuth()) return;
     if (g_web.hasArg("v")) {
         feedback_log::Settings st;
         feedback_log::loadSettings(st);
@@ -321,6 +391,7 @@ static void handleQuestion() {
 
 // /urlrev?v=<url>&save=1   / /urlin?v=<url>&save=1   (live; refreshes LVGL QR widgets)
 static void handleUrl() {
+    requireAuth(); if (!checkAuth()) return;
     if (g_web.hasArg("v")) {
         const bool internal = (g_web.uri() == "/urlin");
         feedback_log::Settings st;
@@ -341,6 +412,7 @@ static void handleUrl() {
 
 // /cooldown?v=2..30&save=1   (seconds)
 static void handleCooldown() {
+    requireAuth(); if (!checkAuth()) return;
     if (g_web.hasArg("v")) {
         const long s = g_web.arg("v").toInt();
         const int clamped = (int)constrain((int)s, 2, 30);
@@ -356,6 +428,7 @@ static void handleCooldown() {
 }
 
 static void handleWifi() {
+    requireAuth(); if (!checkAuth()) return;
     g_web.send(200, "text/html",
         "<body style='background:#06100a;color:#ffb23c;font-family:sans-serif;padding:24px'>"
         "WiFi reset. Connect to the <b>Feedback-Setup</b> network to reconfigure.</body>");
@@ -378,6 +451,7 @@ static void handleWifi() {
 }
 
 static void handleBright() {
+    requireAuth(); if (!checkAuth()) return;
     if (g_web.hasArg("v")) {
         g_brightnessDay = constrain((int)g_web.arg("v").toInt(), 0, 255);
         applyBrightness();
@@ -393,6 +467,7 @@ static void handleBright() {
 
 // ---- browser OTA: upload an app .bin over WiFi and self-flash ----
 static void handleUpdatePage() {
+    requireAuth(); if (!checkAuth()) return;
     g_web.send(200, "text/html",
         "<!DOCTYPE html><html><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -433,6 +508,169 @@ static void handleUpdateUpload() {
         if (Update.end(true)) Serial.printf("[update] done: %u bytes\n", (unsigned)up.totalSize);
         else Update.printError(Serial);
     }
+}
+
+// ---- HTTP Basic Auth -------------------------------------------------------
+// Password stored in NVS namespace "kiosk", key "pass". Empty = first boot:
+// the user must set a password before the config page lets them change anything.
+// /stats and /api/stats are always public.
+
+static void loadPassword() {
+    if (g_passLoaded) return;
+    Preferences p;
+    p.begin("kiosk", true);
+    g_adminPass = p.getString("pass", "");
+    p.end();
+    g_passLoaded = true;
+}
+
+static void savePassword(const char *pw) {
+    Preferences p;
+    p.begin("kiosk", false);
+    p.putString("pass", pw);
+    p.end();
+    g_adminPass = String(pw);
+}
+
+static bool checkAuth() {
+    loadPassword();
+    if (g_adminPass.length() == 0) return true;  // no password set yet — allow (redirect to setup)
+    return g_web.authenticate("admin", g_adminPass.c_str());
+}
+
+static void requireAuth() {
+    if (!checkAuth()) {
+        g_web.requestAuthentication(BASIC_AUTH, "Feedback Kiosk", "Login required");
+    }
+}
+
+// ---- Remote config pull (HTTPS, Bearer token) -------------------------------
+static void loadRemoteConfigSettings() {
+    Preferences p;
+    p.begin("kiosk", true);
+    g_remoteUrl     = p.getString("remurl", "");
+    g_remoteToken   = p.getString("remtok", "");
+    g_remoteVersion = p.getInt("remver", 0);
+    g_remoteLastFetch = 0;
+    p.end();
+}
+
+static void saveRemoteVersion(int ver) {
+    Preferences p;
+    p.begin("kiosk", false);
+    p.putInt("remver", ver);
+    p.end();
+    g_remoteVersion = ver;
+}
+
+static void fetchRemoteConfig() {
+    loadRemoteConfigSettings();
+    if (g_remoteUrl.length() == 0) return;  // disabled
+
+#if defined(ESP_PLATFORM)
+    Serial.printf("[remote] fetching config from %s\n", g_remoteUrl.c_str());
+    WiFiClientSecure client;
+    client.setInsecure();  // accept any cert (hobby device behind NAT is fine)
+    HTTPClient http;
+    http.begin(client, g_remoteUrl);
+    http.setTimeout(5000);
+    if (g_remoteToken.length() > 0) {
+        String auth = "Bearer " + g_remoteToken;
+        http.addHeader("Authorization", auth.c_str());
+    }
+    const int code = http.GET();
+    if (code != 200) {
+        Serial.printf("[remote] fetch failed: HTTP %d\n", code);
+        http.end();
+        return;
+    }
+    String body = http.getString();
+    http.end();
+
+    // Parse JSON — ArduinoJson v7 (dynamic allocation, grows as needed)
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, body);
+    if (err) {
+        Serial.printf("[remote] JSON parse error: %s\n", err.c_str());
+        return;
+    }
+    const int ver = doc["version"] | 0;
+    if (ver <= g_remoteVersion) {
+        Serial.printf("[remote] version %d <= current %d, skipping\n", ver, g_remoteVersion);
+        return;
+    }
+
+    // Apply whitelisted fields only
+    feedback_log::Settings s;
+    feedback_log::loadSettings(s);
+    bool changed = false;
+
+    if (doc.containsKey("review_url")) {
+        strncpy(s.urlReview, doc["review_url"], sizeof(s.urlReview) - 1);
+        s.urlReview[sizeof(s.urlReview) - 1] = 0;
+        changed = true;
+    }
+    if (doc.containsKey("internal_url")) {
+        strncpy(s.urlInternal, doc["internal_url"], sizeof(s.urlInternal) - 1);
+        s.urlInternal[sizeof(s.urlInternal) - 1] = 0;
+        changed = true;
+    }
+    if (doc.containsKey("question")) {
+        strncpy(s.question, doc["question"], sizeof(s.question) - 1);
+        s.question[sizeof(s.question) - 1] = 0;
+        changed = true;
+    }
+    if (doc.containsKey("cooldown_s")) {
+        int cd = (int)doc["cooldown_s"];
+        s.cooldownMs = (uint16_t)((cd < 2 ? 2 : (cd > 30 ? 30 : cd)) * 1000);
+        changed = true;
+    }
+    if (doc.containsKey("mode")) {
+        s.mode = (uint8_t)(((const char*)doc["mode"])[0] == 'd' ? 1 : 0);
+        changed = true;
+    }
+
+    if (changed) {
+        feedback_log::saveSettings(s);
+        feedback_log::applySettings(s);
+        saveRemoteVersion(ver);
+        Serial.printf("[remote] applied config version %d\n", ver);
+    }
+#else
+    // Sim stub — no HTTPClient
+    printf("[remote] (sim) stubbed fetch from %s\n", g_remoteUrl.c_str());
+#endif
+    g_remoteLastFetch = millis();
+}
+
+// ---- save remote config ----------------------------------------------------
+static void handleSaveRemote() {
+    requireAuth(); if (!checkAuth()) return;
+    Preferences p;
+    p.begin("kiosk", false);
+    if (g_web.hasArg("remurl")) p.putString("remurl", g_web.arg("remurl"));
+    if (g_web.hasArg("remtok")) p.putString("remtok", g_web.arg("remtok"));
+    p.end();
+    loadRemoteConfigSettings();
+    g_web.send(200, "text/html",
+        "<meta http-equiv=refresh content='2;url=/'><body style='background:#06100a;color:#1dff86;"
+        "font-family:sans-serif;padding:24px'>Remote config saved.</body>");
+}
+
+// ---- password set / change -------------------------------------------------
+static void handleSetPass() {
+    if (!g_web.hasArg("p") || !g_web.hasArg("p2")) {
+        g_web.send(400, "text/plain", "Missing fields");
+        return;
+    }
+    const String p1 = g_web.arg("p");
+    const String p2 = g_web.arg("p2");
+    if (p1.length() < 4) { g_web.send(400, "text/plain", "Min 4 chars"); return; }
+    if (p1 != p2) { g_web.send(400, "text/plain", "Passwords don't match"); return; }
+    savePassword(p1.c_str());
+    g_web.send(200, "text/html",
+        "<meta http-equiv=refresh content='2;url=/'><body style='background:#06100a;color:#1dff86;"
+        "font-family:sans-serif;padding:24px'>Password set.</body>");
 }
 
 // ---- logo upload / remove --------------------------------------------------
@@ -603,6 +841,8 @@ void setup() {
         }
     }, handleLogoUpload);
     g_web.on("/logo-remove", HTTP_POST, handleLogoRemove);
+    g_web.on("/setpass", HTTP_POST, handleSetPass);
+    g_web.on("/save-remote", HTTP_POST, handleSaveRemote);
     g_web.on("/update", HTTP_GET, handleUpdatePage);
     g_web.on("/update", HTTP_POST,
         []() {
@@ -613,6 +853,11 @@ void setup() {
         },
         handleUpdateUpload);
     g_web.begin();
+
+    loadRemoteConfigSettings();
+    if (g_remoteUrl.length() > 0) {
+        Serial.println("[remote] will fetch config after WiFi connects");
+    }
 
     Serial.println("setup done");
 }
@@ -631,6 +876,14 @@ void loop() {
         Serial.println("[wifi] disconnected -> reconnecting");
         WiFi.reconnect();
     }
+
+    // Remote config: fetch at boot if WiFi is up, then every REMOTE_CONFIG_INTERVAL_MS
+    if (WiFi.status() == WL_CONNECTED && g_remoteUrl.length() > 0) {
+        if (g_remoteLastFetch == 0 || (millis() - g_remoteLastFetch > g_remoteIntervalMs)) {
+            fetchRemoteConfig();
+        }
+    }
+
     // Pet the watchdog so a healthy loop never resets the device.
     esp_task_wdt_reset();
 

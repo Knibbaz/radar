@@ -69,6 +69,11 @@ static const float RANGE_STEPS_KM[] = {10.0f, 20.0f, 30.0f, 50.0f, 100.0f};
 #define FEEDBACK_WEBHOOK_DEF      ""
 #define FEEDBACK_MAX_QUESTION     60          // max chars for the question text
 
+// ---------- Remote config pull (Fase 7) ------------------------------------
+#define REMOTE_CONFIG_INTERVAL_MS (6UL * 3600UL * 1000UL)   // 6 hours
+#define REMOTE_CONFIG_MAX_URL     256
+#define REMOTE_CONFIG_MAX_TOKEN   128
+
 // ---------- Debug ----------
 #define DEBUG_MEM           0               // 1 = print a [mem] heap/fps line every 5s on serial
 
