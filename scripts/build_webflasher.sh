@@ -21,6 +21,10 @@ ESPTOOL="$(find "$HOME/.platformio/packages" -name esptool.py -path '*tool-espto
 PY="$HOME/.platformio/penv/bin/python"
 [ -x "$PY" ] || PY=python3
 
+echo "==> Stamping version"
+VER=$(grep -oE 'FW_VERSION "[0-9.]+"' src/config.h | grep -oE '[0-9.]+' | head -1)
+sed -i '' "s/__FWVER__/${VER:-dev}/g" web/flash/index.html web/flash/manifest.json 2>/dev/null || true
+
 echo "==> Merging bootloader + partitions + app -> $OUT"
 mkdir -p web/flash
 "$PY" "$ESPTOOL" --chip esp32s3 merge_bin -o "$OUT" \
