@@ -21,3 +21,4 @@ secrets.h
 .aider.chat.history.md
 .aider.input.history
 .aider*
+feedback.csv
